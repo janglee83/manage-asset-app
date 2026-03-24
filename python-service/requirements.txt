@@ -1,0 +1,15 @@
+# Core dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+
+# CLIP - OpenAI's model for image-text matching
+git+https://github.com/openai/CLIP.git
+
+# FAISS - vector similarity search
+faiss-cpu>=1.7.4       # use faiss-gpu if CUDA is available
+
+# Image processing
+Pillow>=10.0.0
+
+# Utilities
+numpy>=1.24.0
