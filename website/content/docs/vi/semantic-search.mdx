@@ -1,0 +1,85 @@
+---
+title: "Tìm kiếm ngữ nghĩa"
+description: "Cách AssetVault dùng CLIP để so sánh văn bản và ảnh trong cùng không gian nhúng vector."
+order: 5
+updatedAt: "2026-03-25"
+---
+
+Tìm kiếm ngữ nghĩa là tính năng cốt lõi của AssetVault. Thay vì so khớp từ khóa với tên tệp, nó cho phép bạn mô tả những gì bạn đang tìm kiếm bằng ngôn ngữ tự nhiên và tìm thấy các ảnh khớp về mặt thị giác — ngay cả khi chúng không chứa các từ đó trong tên tệp.
+
+## CLIP là gì?
+
+**CLIP** (Contrastive Language–Image Pre-training) là mô hình AI của OpenAI ánh xạ cả văn bản và ảnh vào cùng một không gian vector 512 chiều.
+
+- Văn bản `"biểu tượng thanh toán màu xanh"` → vector 512 chiều
+- Ảnh `icon-checkout-blue.png` → vector 512 chiều khác
+
+Nếu hai vector gần nhau (cosine similarity cao), ảnh khớp với văn bản.
+
+## Quy trình lập chỉ mục
+
+```
+Tệp ảnh → CLIP image encoder → vector 512-dim
+                                        ↓
+                                 FAISS index (flat L2)
+```
+
+1. Khi bạn thêm thư mục, AssetVault đọc từng ảnh.
+2. Python sidecar chạy ảnh qua CLIP image encoder.
+3. Vector kết quả được lưu trong SQLite và thêm vào FAISS index trong bộ nhớ.
+4. Index FAISS được lưu vào đĩa và tải lại khi khởi động.
+
+## Quy trình truy vấn
+
+```
+Truy vấn văn bản → CLIP text encoder → vector 512-dim
+                                               ↓
+                                   FAISS nearest-neighbour search
+                                               ↓
+                                    Top-K kết quả (cosine > 0.25)
+```
+
+1. Truy vấn văn bản của bạn được mã hoá bởi CLIP text encoder.
+2. FAISS thực hiện tìm kiếm láng giềng gần nhất (flat L2).
+3. Kết quả được xếp hạng theo điểm cosine similarity.
+4. Kết quả có điểm dưới ngưỡng tối thiểu bị lọc ra.
+
+<Callout type="info">
+  Thời gian tìm kiếm điển hình là **&lt; 25 ms** cho thư viện 200.000 ảnh — bao gồm 
+  mã hoá văn bản và tìm kiếm FAISS.
+</Callout>
+
+## Tại sao tìm kiếm theo ngôn ngữ tự nhiên hoạt động?
+
+CLIP được huấn luyện trên hàng trăm triệu cặp ảnh-chú thích từ internet. Nó học được sự căn chỉnh ngữ nghĩa giữa ngôn ngữ và nội dung thị giác. Điều này có nghĩa là:
+
+- `"màu tím"` khớp với ảnh có màu tím
+- `"giao diện tối"` khớp với ảnh UI Dark Mode
+- `"biểu tượng màu phẳng"` khớp với ảnh thiết kế flat icon
+- `"ảnh chụp màn hình trên điện thoại"` khớp với màn hình điện thoại
+
+## Hỗ trợ đa ngôn ngữ
+
+CLIP text encoder hỗ trợ 50+ ngôn ngữ gốc, bao gồm tiếng Việt. Bạn có thể tìm kiếm bằng tiếng Anh, tiếng Việt, tiếng Nhật, tiếng Trung, v.v. và nhận kết quả từ cùng một chỉ mục.
+
+```
+"icon giỏ hàng"     → tìm ảnh giỏ hàng
+"shopping cart icon" → cùng kết quả
+"カートアイコン"     → cùng kết quả
+```
+
+## Ngưỡng điểm và lọc kết quả
+
+Điểm cosine similarity dao động từ -1 đến 1. AssetVault dùng các ngưỡng sau:
+
+| Ngưỡng | Nghĩa |
+|---|---|
+| `> 0.30` | Khớp mạnh — cao khả năng liên quan |
+| `0.20–0.30` | Khớp vừa — có thể liên quan |
+| `< 0.20` | Khớp yếu — bị lọc bỏ theo mặc định |
+
+Bạn có thể điều chỉnh ngưỡng trong **Cài đặt → Tìm kiếm → Ngưỡng tương đồng**.
+
+## Kết hợp với tìm kiếm từ khóa
+
+AssetVault kết hợp tìm kiếm ngữ nghĩa với tìm kiếm metadata (tên tệp, thẻ, OCR text). Kết quả từ cả hai nguồn được tổng hợp và xếp hạng lại bởi `ranker.py`.

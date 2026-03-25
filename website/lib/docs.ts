@@ -42,6 +42,12 @@ export interface Doc extends DocMeta {
 
 const DOCS_DIR = path.join(process.cwd(), "content", "docs");
 
+/** Returns the locale-specific docs directory, falling back to the default. */
+function docsDir(locale: string): string {
+  if (locale === "en" || !locale) return DOCS_DIR;
+  return path.join(DOCS_DIR, locale);
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Coerce frontmatter data to a safe DocFrontmatter shape. */
@@ -110,30 +116,45 @@ export async function getAllDocSlugs(): Promise<string[]> {
 
 /**
  * Return the full Doc (including raw MDX source) for a given slug.
- * Returns `null` when the file does not exist — callers should `notFound()`.
+ * Tries the locale-specific file first, falls back to English.
+ * Returns `null` when neither file exists — callers should `notFound()`.
  */
-export async function getDocBySlug(slug: string): Promise<Doc | null> {
+export async function getDocBySlug(
+  slug: string,
+  locale: string = "en",
+): Promise<Doc | null> {
   // Normalise the slug: strip leading/trailing slashes, reject path traversal.
   const safe = slug.replace(/^\/+|\/+$/g, "").replace(/\.\./g, "");
   if (!safe || safe.includes("/")) return null;
 
-  const filePath = path.join(DOCS_DIR, `${safe}.mdx`);
-
-  // Verify the resolved path stays within DOCS_DIR to prevent traversal.
-  const resolved = path.resolve(filePath);
-  if (!resolved.startsWith(path.resolve(DOCS_DIR))) return null;
-
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    const { data, content } = matter(raw);
-    const fm = parseFrontmatter(data as Record<string, unknown>, safe);
-    return {
-      ...fm,
-      slug: safe,
-      readingTime: readingTime(content).text,
-      content,
-    };
-  } catch {
-    return null;
+  // Build candidate paths: locale-specific first, then English fallback.
+  const candidates: string[] = [];
+  if (locale && locale !== "en") {
+    const localeDir = docsDir(locale);
+    const localePath = path.join(localeDir, `${safe}.mdx`);
+    // Security: resolved path must stay within content/docs/
+    const resolvedLocale = path.resolve(localePath);
+    if (resolvedLocale.startsWith(path.resolve(DOCS_DIR))) {
+      candidates.push(localePath);
+    }
   }
+  candidates.push(path.join(DOCS_DIR, `${safe}.mdx`));
+
+  for (const filePath of candidates) {
+    try {
+      const raw = await fs.readFile(filePath, "utf8");
+      const { data, content } = matter(raw);
+      const fm = parseFrontmatter(data as Record<string, unknown>, safe);
+      return {
+        ...fm,
+        slug: safe,
+        readingTime: readingTime(content).text,
+        content,
+      };
+    } catch {
+      // File not found — try next candidate.
+    }
+  }
+
+  return null;
 }

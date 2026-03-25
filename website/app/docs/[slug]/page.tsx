@@ -13,6 +13,7 @@ import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
 import { getAllDocSlugs, getDocBySlug } from "@/lib/docs";
+import { getLocale } from "@/lib/locale";
 import { getPrevNext } from "@/lib/nav";
 import {
   buildDocPageMetadata,
@@ -23,7 +24,10 @@ import { mdxComponents } from "@/components/docs/MDXComponents";
 import { DocsTOC } from "@/components/docs/DocsTOC";
 import { PrevNextNav } from "@/components/docs/PrevNextNav";
 import { Clock, Calendar } from "lucide-react";
-
+// Docs are dynamically rendered so the server can read the locale cookie
+// and serve the correct translation. Static params are still generated so
+// all English slugs are pre-built; the dynamic flag adds per-request locale.
+export const dynamic = "force-dynamic";
 // ── Static generation ─────────────────────────────────────────────────────────
 
 export async function generateStaticParams() {
@@ -75,7 +79,8 @@ export default async function DocPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const doc = await getDocBySlug(slug);
+  const locale = await getLocale();
+  const doc = await getDocBySlug(slug, locale);
 
   if (!doc) notFound();
 

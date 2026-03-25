@@ -1,0 +1,50 @@
+---
+title: "Tổng quan"
+description: "AssetVault là ứng dụng tìm kiếm tài nguyên thiết kế cục bộ, được tăng cường bởi AI, chạy hoàn toàn trên máy của bạn."
+order: 1
+updatedAt: "2026-03-25"
+---
+
+AssetVault là ứng dụng desktop biến các thư mục tài nguyên thiết kế cục bộ của bạn thành một thư viện có thể tìm kiếm đầy đủ, được lập chỉ mục bởi AI — không cần tải lên đám mây, không cần đăng ký, và không cần kết nối internet.
+
+<TechDiagram title="Tổng quan hệ thống" />
+
+## Vấn đề được giải quyết là gì?
+
+Các nhóm thiết kế tích lũy hàng nghìn tài nguyên trong hàng chục thư mục: xuất từ Figma, biểu tượng, mockup, bộ thương hiệu, ảnh chụp màn hình. Việc tìm đúng tệp trở thành một công việc tìm kiếm thủ công tốn thời gian. Các công cụ DAM (Quản lý tài sản kỹ thuật số) trên đám mây giải quyết vấn đề này bằng cách tải mọi thứ lên máy chủ của họ — nhưng đánh đổi bằng quyền riêng tư, độ trễ, và chi phí hàng tháng.
+
+AssetVault giải quyết cùng vấn đề đó **cục bộ**. Mọi tài nguyên được lập chỉ mục trên máy của bạn, nhúng vector được tính toán trên phần cứng của bạn, và tất cả tìm kiếm được thực hiện trong quy trình mà không có dữ liệu nào rời khỏi thiết bị của bạn.
+
+## Tính năng chính
+
+| Tính năng | Chi tiết |
+|---|---|
+| Tìm kiếm ngữ nghĩa | Độ tương đồng văn bản-to-ảnh CLIP qua chỉ mục FAISS |
+| Tìm kiếm bằng ảnh | Kéo bất kỳ ảnh nào vào — tìm các tệp tương tự về mặt thị giác |
+| Truy vấn đa ngôn ngữ | EN / Nhật / Tiếng Việt + 50+ ngôn ngữ CLIP |
+| Phát hiện trùng lặp | Chính xác (SHA-256) + gần trùng lặp (cosine > 0.92) |
+| Tự động gắn thẻ | Phân loại zero-shot CLIP với 200 nhãn |
+| Bỏ qua thông minh | Tự động bỏ qua `node_modules`, `.git`, bộ nhớ đệm |
+| Lập chỉ mục ưu tiên | Tệp thiết kế (`.fig`, `.sketch`, `.psd`) được quét trước |
+| Hoạt động ngoại tuyến | Hoạt động hoàn toàn ngoại tuyến sau khi tải mô hình lần đầu |
+
+## Công nghệ sử dụng
+
+| Lớp | Công nghệ | Vai trò |
+|---|---|---|
+| Giao diện | React 18 + Tauri v2 | Shell desktop đa nền tảng |
+| Lưu trữ | SQLite (rusqlite) | Tìm kiếm từ khóa, thẻ, siêu dữ liệu |
+| Nhúng | CLIP `ViT-B/32` | Vector ảnh + văn bản 512 chiều |
+| Chỉ mục vector | FAISS (flat L2) | Tìm kiếm độ tương đồng dưới mili-giây |
+| Ngôn ngữ | Rust + Python sidecar | Lệnh + pipeline AI |
+
+## Nền tảng được hỗ trợ
+
+- **macOS** — Monterey, Ventura, Sonoma (Intel x64 + Apple Silicon M1/M2/M3)
+- **Windows** — Windows 10 64-bit, Windows 11
+- **Ubuntu** — 22.04 LTS, 24.04 LTS
+
+<Callout type="info">
+  Lần chạy đầu tiên mất 30–90 giây trong khi trọng số mô hình CLIP được tải
+  vào bộ nhớ. Các lần chạy tiếp theo khởi động sidecar trong vòng 5 giây.
+</Callout>

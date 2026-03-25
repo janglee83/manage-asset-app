@@ -71,6 +71,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   function setLocale(next: Locale) {
     setLocaleState(next);
     localStorage.setItem(STORAGE_KEY, next);
+    // Also persist to cookie so Server Components (docs pages) can read it.
+    document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
   }
 
   const value: I18nContextValue = {

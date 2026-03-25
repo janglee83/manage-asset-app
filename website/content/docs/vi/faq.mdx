@@ -1,0 +1,97 @@
+---
+title: "FAQ"
+description: "Các câu hỏi thường gặp về AssetVault — cài đặt, quyền riêng tư, hiệu suất và xử lý sự cố."
+order: 15
+updatedAt: "2026-03-25"
+---
+
+## Chung
+
+### AssetVault có miễn phí không?
+
+AssetVault có gói miễn phí (tới 5.000 tài nguyên được lập chỉ mục) và gói Pro trả phí cho tài nguyên không giới hạn với hỗ trợ ưu tiên. Xem giá tại [trang giá](https://assetvault.app/pricing).
+
+### AssetVault có cần kết nối internet không?
+
+**Không** — sau khi tải mô hình lần đầu, AssetVault hoạt động hoàn toàn ngoại tuyến. Tài nguyên của bạn không bao giờ rời khỏi thiết bị. Yêu cầu gửi ra ngoài duy nhất là kiểm tra phiên bản tùy chọn, có thể tắt trong Cài đặt.
+
+### AssetVault có chỉnh sửa tệp gốc của tôi không?
+
+**Không bao giờ.** AssetVault đọc tệp của bạn để tạo thumbnail và nhúng vector nhưng không ghi vào chúng trong bất kỳ trường hợp nào. Bản gốc của bạn không bị thay đổi.
+
+### Điều gì xảy ra với dữ liệu của tôi nếu tôi ngừng sử dụng AssetVault?
+
+Các tệp gốc không bao giờ bị di chuyển hoặc chỉnh sửa. Xóa ứng dụng và thư mục dữ liệu của nó (được mô tả trong [Cài đặt](/docs/installation)) sẽ xóa tất cả dấu vết của AssetVault khỏi hệ thống của bạn.
+
+---
+
+## Quyền riêng tư
+
+### AssetVault có gửi ảnh của tôi đến API AI nào không?
+
+Không. CLIP, EasyOCR và tất cả các mô hình AI khác chạy cục bộ bên trong quá trình Python sidecar. Không có ảnh, vector hoặc metadata nào được gửi đến máy chủ bên ngoài.
+
+### Tôi có thể dùng AssetVault với tệp bí mật của khách hàng không?
+
+Có. Vì tất cả xử lý là cục bộ, AssetVault an toàn để dùng với tài nguyên khách hàng bí mật. Không có gì được ghi lại trên dịch vụ từ xa.
+
+---
+
+## Hiệu suất
+
+### Tại sao lần tìm kiếm đầu tiên chậm?
+
+Mô hình CLIP được tải vào bộ nhớ khi sử dụng lần đầu. Sau đó, mô hình ở lại trong bộ nhớ và các truy vấn nhanh (~20–35 ms). Khởi động lạnh mất ~1,5 giây với backend ONNX runtime.
+
+### Thư viện của tôi có 200.000 tệp — nhúng vector sẽ mất bao lâu?
+
+Khoảng 28 phút trên CPU (M1 Pro). Bật GPU acceleration trong **Cài đặt → Hiệu suất** để giảm xuống ~10 phút (MPS) hoặc ~5 phút (CUDA). Quá trình nhúng chạy nền và bạn có thể tìm kiếm các tài nguyên đã được lập chỉ mục trong khi chờ.
+
+### AssetVault đang dùng nhiều CPU — điều đó bình thường không?
+
+Có, trong quá trình nhúng vector lần đầu. Python sidecar chạy CLIP inference trên mỗi ảnh, tốn nhiều CPU/GPU. Sau khi tất cả tài nguyên được nhúng, mức sử dụng CPU gần bằng không. Bạn có thể giảm bằng **Cài đặt → Hiệu suất → Mức độ ưu tiên nhúng**.
+
+---
+
+## Xử lý sự cố
+
+### Sidecar không khởi động / tính năng AI không hoạt động
+
+1. Mở **Cài đặt → Giới thiệu** và kiểm tra đường dẫn sidecar.
+2. Trên macOS, đảm bảo file nhị phân không bị kiểm duyệt: `xattr -d com.apple.quarantine /đường/dẫn/sidecar`.
+3. Kiểm tra thư mục cache mô hình có thể ghi.
+4. Trên Linux, đảm bảo file nhị phân có quyền thực thi: `chmod +x ./sidecar`.
+5. Cài đặt lại ứng dụng và cho phép tải lại trọng số mô hình.
+
+Nếu vấn đề vẫn tồn tại, kiểm tra tệp log: `logs/sidecar.log`.
+
+### Tìm kiếm không trả về kết quả dù đã lập chỉ mục tệp
+
+1. Kiểm tra thanh tiến độ nhúng. Nếu hiển thị 0% hoặc bị dừng, sidecar có thể không chạy.
+2. Đi đến **Cài đặt → Chỉ mục → Xây dựng lại chỉ mục** để nhúng lại toàn bộ tài nguyên.
+3. Kiểm tra file FAISS index có tồn tại trong thư mục dữ liệu ứng dụng.
+
+### Tệp không được phát hiện khi thêm vào thư mục được theo dõi
+
+- Kiểm tra **Cài đặt → Thư mục được theo dõi** — xác nhận thư mục được liệt kê là đang hoạt động.
+- Trình theo dõi tệp đệm sự kiện 500 ms — chờ một chút rồi làm mới.
+- Trên ổ mạng: trình theo dõi tệp OS có thể không phát ra sự kiện cho các thay đổi từ xa. Dùng **Quét → Quét lại ngay** để cập nhật thủ công.
+
+---
+
+## Phát triển
+
+### Tôi có thể đóng góp cho AssetVault không?
+
+Có. AssetVault là mã nguồn mở trên GitHub. Xem file `CONTRIBUTING.md` trong kho lưu trữ để biết hướng dẫn thiết lập và đóng góp.
+
+### Tôi có thể xây dựng từ mã nguồn không?
+
+Xem trang [Kiến trúc](/docs/architecture) để biết tech stack. Bạn sẽ cần Rust (stable), Node.js 20+ và Python 3.11+. Chạy:
+
+```bash
+npm install
+npm run tauri build
+```
+
+Quy trình CI trong `.github/workflows/` mô tả các bước xây dựng chính xác cho mỗi nền tảng.

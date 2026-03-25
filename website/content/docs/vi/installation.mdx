@@ -1,0 +1,78 @@
+---
+title: "Cài đặt"
+description: "Tải xuống và cài đặt AssetVault trên macOS, Windows hoặc Linux. Tất cả tài nguyên ở lại trên thiết bị của bạn."
+order: 3
+updatedAt: "2026-03-25"
+---
+
+AssetVault được phân phối dưới dạng một trình cài đặt độc lập cho mỗi nền tảng. Lớp AI Python được đóng gói bên trong ứng dụng — không cần cài đặt Python riêng.
+
+## Tải xuống
+
+Truy cập [trang Tải xuống](https://assetvault.app/download) và chọn nền tảng của bạn. Các trình cài đặt đã được ký mã và công chứng.
+
+| Nền tảng | Định dạng | Phiên bản tối thiểu |
+|---|---|---|
+| macOS | `.dmg` (universal) | macOS 12 Monterey |
+| Windows | `.msi` (NSIS) | Windows 10 21H2 |
+| Linux | `.AppImage` / `.deb` | Ubuntu 22.04 / glibc 2.35 |
+
+## macOS
+
+1. Tải xuống `AssetVault_x.y.z_universal.dmg`.
+2. Mở DMG và kéo **AssetVault** vào thư mục Applications.
+3. Khi mở lần đầu, macOS có thể hiện hộp thoại kiểm duyệt. Nhấp **Open** hoặc chạy:
+   ```bash
+   xattr -d com.apple.quarantine /Applications/AssetVault.app
+   ```
+4. Cấp quyền truy cập thư mục chứa tài nguyên của bạn khi được nhắc bởi hộp thoại quyền riêng tư hệ thống.
+
+<Callout type="info">
+  File nhị phân universal chạy nguyên bản trên cả Apple Silicon (arm64) và Intel (x86_64).
+</Callout>
+
+## Windows
+
+1. Tải xuống `AssetVault_x.y.z_x64.msi`.
+2. Nhấp đúp vào trình cài đặt và làm theo hướng dẫn.
+3. Windows SmartScreen có thể hiện cảnh báo khi chạy lần đầu — nhấp **More info → Run anyway**. Trình cài đặt được ký bằng chứng chỉ mã hóa.
+4. AssetVault cài vào `%AppData%\AssetVault` theo mặc định. Tất cả dữ liệu cục bộ (SQLite, FAISS index, thumbnail) cũng được lưu tại đây.
+
+## Linux
+
+### AppImage (tất cả các bản phân phối)
+
+```bash
+chmod +x AssetVault_x.y.z_amd64.AppImage
+./AssetVault_x.y.z_amd64.AppImage
+```
+
+Không cần cài đặt. AppImage bao gồm tất cả các phụ thuộc.
+
+### Debian / Ubuntu (`.deb`)
+
+```bash
+sudo dpkg -i assetvault_x.y.z_amd64.deb
+# Nếu có lỗi phụ thuộc:
+sudo apt-get install -f
+```
+
+<Callout type="warning">
+  Wayland được hỗ trợ qua XWayland trên hầu hết các bản phân phối Linux. Để
+  compositing Wayland gốc, đặt `WEBKIT_DISABLE_COMPOSITING_MODE=1` nếu gặp
+  vấn đề hiển thị.
+</Callout>
+
+## Lần chạy đầu tiên
+
+Khi chạy lần đầu, AssetVault:
+
+1. Tạo cơ sở dữ liệu SQLite cục bộ tại thư mục dữ liệu nền tảng.
+2. Tải xuống trọng số mô hình **CLIP ViT-B/32** (~340 MB) từ CDN nếu chưa có trong bộ nhớ đệm. Điều này xảy ra một lần và yêu cầu kết nối mạng.
+3. Xây dựng FAISS index (trống lúc đầu).
+
+Sau đó, AssetVault hoạt động **hoàn toàn ngoại tuyến**. Không có dữ liệu tài nguyên nào rời khỏi thiết bị của bạn.
+
+## Thêm thư mục đầu tiên
+
+Nhấp **+ Thêm thư mục** trong thanh bên, chọn một thư mục chứa tài nguyên và AssetVault sẽ bắt đầu quét ngay. Thư viện lớn (50.000+ tệp) thường hoàn thành quét trong vòng 2 phút trên Mac M1.
