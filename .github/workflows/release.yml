@@ -291,4 +291,32 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: --target x86_64-unknown-linux-gnu --config src-tauri/tauri.release.conf.json
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Step 3: Publish the draft release once all platform builds succeed
+  # ───────────────────────────────────────────────────────────────────────────
+  publish-release:
+    name: Publish release
+    needs: [create-release, release-windows, release-macos, release-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish draft → public release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        run: |
+          python3 - <<'EOF'
+          import urllib.request, json, os
+          token = os.environ["GITHUB_TOKEN"]
+          release_id = os.environ["RELEASE_ID"]
+          url = f"https://api.github.com/repos/janglee83/manage-asset-app/releases/{release_id}"
+          payload = json.dumps({"draft": False, "make_latest": "true"}).encode()
+          req = urllib.request.Request(url, data=payload, method="PATCH")
+          req.add_header("Authorization", f"token {token}")
+          req.add_header("Accept", "application/vnd.github+json")
+          req.add_header("Content-Type", "application/json")
+          with urllib.request.urlopen(req) as r:
+              data = json.loads(r.read())
+          print(f"Published: {data['html_url']}")
+          EOF
 
