@@ -140,7 +140,7 @@ jobs:
           TAURI_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target x86_64-pc-windows-msvc --config tauri.release.conf.json
+          args: --target x86_64-pc-windows-msvc --config src-tauri/tauri.release.conf.json
 
       - name: Remove decoded certificate
         if: always() && steps.write-cert.outputs.cert-path != ''
@@ -194,7 +194,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target aarch64-apple-darwin --config tauri.release.conf.json
+          args: --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json
 
       - name: Build x86_64 (Intel) and upload
         uses: tauri-apps/tauri-action@v0
@@ -204,7 +204,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target x86_64-apple-darwin --config tauri.release.conf.json
+          args: --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
 
   # ───────────────────────────────────────────────────────────────────────────
   # Step 2c: Linux x64 (AppImage + .deb)
@@ -268,6 +268,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target x86_64-unknown-linux-gnu --config tauri.release.conf.json
+          args: --target x86_64-unknown-linux-gnu --config src-tauri/tauri.release.conf.json
 
 
