@@ -1,0 +1,96 @@
+---
+title: "Security"
+description: "AssetVault's local-first security model, threat analysis, data storage, and privacy guarantees."
+order: 12
+updatedAt: "2026-03-25"
+---
+
+AssetVault is built on a **local-first** security model: your assets and metadata never leave your device unless you explicitly export them. This page documents the full threat model and the controls in place.
+
+## Data residency
+
+| Data type | Stored at | Leaves device? |
+|---|---|---|
+| Original asset files | Your filesystem (unchanged) | Never |
+| Thumbnails | Platform cache directory | Never |
+| CLIP vectors | FAISS index in app data directory | Never |
+| Tags and descriptions | SQLite in app data directory | Never |
+| Search history | SQLite in app data directory | Never |
+| OCR text | SQLite in app data directory | Never |
+| AI model weights | Separate model cache directory | Never |
+| Update check | `api.assetvault.app` (version string only) | Version number only |
+
+AssetVault makes exactly one outbound request: the version check at **Settings → About → Check for updates**. This request sends only the current app version and platform. It can be disabled in settings.
+
+## Process isolation
+
+AssetVault runs in three process isolation levels:
+
+1. **WebView (renderer)**: The React UI runs inside a hardened WebView. It cannot access the filesystem or execute native code directly — all operations go through the IPC bridge.
+2. **Rust host (main process)**: Handles all filesystem I/O, SQLite, and subprocess management. Validates all inputs before acting. Runs with the user's OS permissions.
+3. **Python sidecar**: Spawned as a subprocess, communicates over stdin/stdout only. Has no network socket and does not inherit the Rust process's file handles.
+
+## Input validation
+
+<Callout type="warning">
+  All IPC command parameters are validated in Rust before use. Failure to
+  validate user-supplied data is the most common source of local security
+  issues in Tauri apps.
+</Callout>
+
+Validations in place:
+
+- **Asset IDs**: Validated as non-empty strings containing only UUID characters (hex + dashes). Rejected with `InvalidAssetId` if they contain path characters (`/`, `\`, `.`).
+- **File paths from the frontend**: Verified to reside within a folder the user has explicitly added to AssetVault. Paths outside the watched set are rejected.
+- **Search queries**: Length-capped at 500 characters. All SQL queries use parameterised statements — no string interpolation.
+- **Sidecar inputs**: Serialised as JSON. The sidecar validates the `method` field against an allowlist. Queries from the sidecar are length-capped at 200 characters.
+
+## SQLite security
+
+- AssetVault uses parameterised queries (`?` placeholders) throughout. Raw string interpolation into SQL is never used.
+- The SQLite database file has `0600` permissions (readable only by the current user).
+- WAL mode is enabled to prevent corruption on crash.
+
+## Tauri capabilities
+
+AssetVault declares only the minimum required capabilities in `capabilities/default.json`:
+
+```json
+{
+  "permissions": [
+    "core:app:default",
+    "core:event:default",
+    "core:window:default",
+    "core:path:default",
+    "dialog:default",
+    "fs:default",
+    "shell:execute"
+  ]
+}
+```
+
+The `shell:execute` permission is scoped to the Python sidecar binary only. Arbitrary shell execution from the UI is not possible.
+
+## Content Security Policy
+
+The WebView enforces a strict CSP:
+
+```
+default-src 'self';
+script-src 'self';
+style-src 'self' 'unsafe-inline';
+img-src 'self' data: asset:;
+connect-src 'none';
+```
+
+`connect-src 'none'` means the WebView cannot make outbound network requests. This prevents exfiltration of asset data via a compromised renderer.
+
+## Model download integrity
+
+CLIP model weights are downloaded over HTTPS from a CDN with a pinned TLS certificate. The SHA-256 hash of each model file is verified before loading. If verification fails, the model is discarded and re-downloaded.
+
+## Responsible disclosure
+
+If you discover a security vulnerability in AssetVault, please report it privately at **security@assetvault.app**. Do not file a public GitHub issue for security bugs.
+
+We follow a 90-day coordinated disclosure timeline. Credit is given in release notes unless you prefer to remain anonymous.

@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 use crate::watcher::WatcherHandle;
+use crate::sidecar::SidecarHandle;
 
 pub struct AppState {
     pub db: Arc<Mutex<Connection>>,
@@ -9,6 +10,20 @@ pub struct AppState {
     /// Handle to the running file watcher.  `None` until the first folder is
     /// added (or until startup folders are loaded from the DB).
     pub watcher: Mutex<Option<WatcherHandle>>,
+    /// Handle to the Python semantic-search sidecar process.
+    /// `None` if the sidecar failed to start or is not yet running.
+    pub sidecar: Mutex<Option<Arc<SidecarHandle>>>,
+    /// Parameters needed to re-spawn the sidecar after a crash.
+    /// `None` on the compiled-binary path (spawn_exe) or before first spawn.
+    pub sidecar_python: Mutex<Option<SidecarSpawnConfig>>,
+}
+
+/// The three strings required to re-spawn the Python sidecar via `SidecarHandle::spawn`.
+#[derive(Debug, Clone)]
+pub struct SidecarSpawnConfig {
+    pub python_exe:  String,
+    pub script_path: String,
+    pub cwd:         String,
 }
 
 impl AppState {
@@ -18,6 +33,8 @@ impl AppState {
             cache_dir,
             db_path,
             watcher: Mutex::new(None),
+            sidecar: Mutex::new(None),
+            sidecar_python: Mutex::new(None),
         }
     }
 }

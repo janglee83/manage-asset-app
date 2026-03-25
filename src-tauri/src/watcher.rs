@@ -35,7 +35,7 @@ use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
 use chrono::Utc;
 
-use crate::file_types::is_scan_target;
+use crate::file_types::is_supported;
 use crate::hasher::hash_file;
 use crate::thumbnail::generate_thumbnail;
 
@@ -199,7 +199,7 @@ fn ingest(pending: &mut HashMap<PathBuf, Pending>, event: Event) {
     let deadline = Instant::now() + DEBOUNCE;
 
     for path in event.paths {
-        if is_transient(&path) || !is_scan_target(&path) {
+        if is_transient(&path) || !is_supported(&path) {
             continue;
         }
         pending

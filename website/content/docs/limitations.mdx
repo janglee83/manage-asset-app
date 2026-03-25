@@ -1,0 +1,92 @@
+---
+title: "Limitations"
+description: "Known limitations, edge cases, and planned improvements in AssetVault."
+order: 14
+updatedAt: "2026-03-25"
+---
+
+AssetVault is production-ready software, but it has known limitations. This page documents them honestly so you can plan accordingly.
+
+## Search limitations
+
+### CLIP token limit
+
+CLIP's text encoder accepts a maximum of **77 BPE tokens**. Queries longer than this are silently truncated. For most queries, 77 tokens is equivalent to 40–60 English words — more than adequate. Very long queries with unusual vocabulary may be truncated in a way that changes meaning.
+
+**Workaround**: Keep search queries concise. The query expander adds synonyms automatically; you don't need to spell out every variant.
+
+### CLIP vocabulary gaps
+
+CLIP was trained on general internet data. It performs less well on:
+
+- **Brand-specific design systems** — "Airbnb's Cereal font" may not match without tags.
+- **Internal product terminology** — company-specific feature names are unlikely to be in CLIP's training set.
+- **Very new visual trends** — styles emerging after 2021 (CLIP's training cutoff) may not be recognised.
+
+**Workaround**: Add custom tags via **Settings → Custom Tags** for domain-specific vocabulary.
+
+### Zero-shot tagger precision
+
+The zero-shot tagger achieves ~72% precision at the default threshold (0.35). Roughly 1 in 4 auto-applied tags may be incorrect for unusual image types. For a 50 000-asset library this is ~12 500 incorrect tags.
+
+**Workaround**: Review and correct tags in the asset detail panel. Corrected tags are hard-coded in SQLite and take priority over auto-generated ones.
+
+## Platform limitations
+
+### macOS: iCloud Drive
+
+Files stored in iCloud Drive that have been evicted from local storage (cloud icon in Finder) cannot be embedded until they are downloaded. AssetVault will try to trigger a download and skip the file if it times out after 30 seconds.
+
+### Windows: long paths
+
+Windows paths longer than 260 characters are silently skipped unless the user has enabled long-path support in Windows Group Policy. To enable:
+
+```powershell
+# Run as Administrator
+New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" `
+  -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+```
+
+### Linux: thumbnail generation for HEIC/HEIF
+
+`libheif` is not bundled with the Linux AppImage. HEIC/HEIF files will be scanned and embedded but will show a placeholder thumbnail. Install `libheif-dev` to enable thumbnail generation.
+
+### Network volumes
+
+<Callout type="warning">
+  Network-attached storage (NAS, SMB, NFS) is partially supported.
+  Scanning and searching work, but live file watching may miss events depending
+  on the NFS mount options. Use `actimeo=0` for reliable change detection.
+</Callout>
+
+## Performance limitations
+
+### First-launch model download
+
+The CLIP model (~340 MB) is downloaded on first launch. On a slow connection (< 10 Mbps), this can take several minutes. There is no resume mechanism — if the download is interrupted, it restarts from zero.
+
+### Very large FAISS indexes (> 1 M assets)
+
+Libraries with more than 1 million assets have not been tested. FAISS memory usage will exceed 2 GB. An `IVFFlat` index helps but may not be sufficient. Sharding support is planned.
+
+### Simultaneous operations
+
+Running a full scan and a semantic search at the same time causes contention on the Python sidecar process. The sidecar processes requests serially — search queries are queued behind the embedding batch. The UI shows a "busy" indicator when this occurs.
+
+## Known bugs
+
+| Issue | Status | Workaround |
+|---|---|---|
+| Relation graph layout jitter on window resize | Fix in progress | Avoid resizing during graph view |
+| OCR produces extra whitespace in PDF text | Known, low priority | Strip extra spaces when searching |
+| Sidecar restart sometimes hangs on Windows | Rare; under investigation | Force-quit and relaunch the app |
+| Dark mode flicker on macOS during scan | Cosmetic; CSS fix planned | None needed |
+
+## Planned improvements
+
+- GPU-accelerated thumbnail generation
+- FAISS index sharding for > 1 M assets
+- Flatpak and Snap packages for Linux
+- iCloud Drive offline eviction handling
+- Windows ARM64 CI testing
+- Custom model fine-tuning (local, privacy-preserving)

@@ -1,0 +1,115 @@
+---
+title: "File Discovery"
+description: "How AssetVault scans your folders, filters ignored paths, and keeps the index in sync as files change."
+order: 5
+updatedAt: "2026-03-25"
+---
+
+AssetVault's file scanner is written in Rust and built around `walkdir` with a priority-aware traversal strategy. It handles libraries with millions of files without blocking the UI.
+
+## How scanning works
+
+When you add a folder, the scanner:
+
+1. Creates a `WalkDir` iterator with `filter_entry` hooks applied at the directory level. Ignored subtrees are pruned entirely — the scanner never reads their contents.
+2. For each discovered file, checks the extension against the supported format list.
+3. Computes a **priority score** based on whether the file appears to be a design file (`.fig`, `.sketch`, `.psd`, `.ai`, `.svg` score higher) so design files are indexed before generic images.
+4. Batches files into groups of 50 for hashing and thumbnail generation.
+5. Inserts each file into SQLite with its hash, path, size, and modification time.
+
+<TechDiagram title="Scanner pipeline" steps={[
+  { label: "WalkDir", color: "blue" },
+  { label: "filter_entry", color: "blue" },
+  { label: "priority_score", color: "orange" },
+  { label: "hasher", color: "orange" },
+  { label: "thumbnail", color: "orange" },
+  { label: "SQLite", color: "violet" }
+]} />
+
+## Supported file types
+
+### Vector & design
+
+| Extension | Format |
+|---|---|
+| `.fig` | Figma (exported) |
+| `.sketch` | Sketch |
+| `.ai` | Adobe Illustrator |
+| `.svg` | Scalable Vector Graphics |
+| `.eps` | Encapsulated PostScript |
+| `.pdf` | PDF (first page previewed) |
+
+### Raster images
+
+`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.bmp`, `.tiff`, `.tif`, `.heic`, `.heif`, `.avif`, `.ico`
+
+### Fonts
+
+`.ttf`, `.otf`, `.woff`, `.woff2`
+
+### 3D & other
+
+`.glb`, `.gltf`, `.lottie`, `.json` (Lottie detected by content)
+
+## Ignore patterns
+
+AssetVault ships with a built-in ignore list that prunes common noise directories. It uses the same gitignore-style glob syntax:
+
+```
+.git/
+.svn/
+node_modules/
+.next/
+.nuxt/
+dist/
+build/
+target/
+__pycache__/
+.DS_Store
+Thumbs.db
+```
+
+You can add custom ignore patterns in **Settings → Ignored Paths**. Patterns follow `.gitignore` syntax and are matched relative to the watched folder root.
+
+<Callout type="tip">
+  To exclude a specific subfolder without ignoring its parent, add the
+  subfolder name as a pattern. For example, adding `stock/` ignores any folder
+  named `stock` anywhere under your library.
+</Callout>
+
+## Live file watching
+
+After the initial scan, AssetVault registers a filesystem watcher on every watched folder using the OS-native event API:
+
+| Platform | Event source |
+|---|---|
+| macOS | `FSEvents` |
+| Windows | `ReadDirectoryChangesW` |
+| Linux | `inotify` |
+
+File events are **debounced by 500 ms** to coalesce rapid writes (e.g., during a Figma export or app bundle creation) into a single scan event. The watcher is managed by the `watcher.rs` Rust module and emits Tauri events that trigger incremental re-indexing.
+
+## Incremental re-indexing
+
+When a file change event fires:
+
+1. The file's modification time is compared with the stored `modified_at` in SQLite.
+2. If unchanged, the file is skipped (no re-hash, no re-embed).
+3. If changed, the hash is recomputed. If the hash also changed, the asset is re-embedded by sending it to the sidecar.
+4. If a file is deleted, its `deleted_at` timestamp is set in SQLite. The asset remains visible in the UI with a "file missing" indicator until you manually purge it.
+
+## Large library performance
+
+| Library size | Initial scan (M1 Pro) | Embedding time |
+|---|---|---|
+| 5 000 files | ~8 seconds | ~40 seconds |
+| 50 000 files | ~70 seconds | ~7 minutes |
+| 200 000 files | ~5 minutes | ~28 minutes |
+
+Embedding time scales with CPU speed and whether a GPU is available. CLIP model inference is the bottleneck, not I/O.
+
+<Callout type="warning">
+  If your library root is a network volume (NAS, SMB share), the initial scan
+  will be slower and the file watcher may miss events. Use network drives for
+  archive access, not live monitoring.
+</Callout>

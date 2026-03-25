@@ -1,0 +1,94 @@
+---
+title: "Installation"
+description: "Download and install AssetVault on macOS, Windows, or Linux. All assets stay on your device."
+order: 3
+updatedAt: "2026-03-25"
+---
+
+AssetVault ships as a single self-contained installer for each platform. The Python intelligence layer is bundled inside the app — no separate Python installation is required.
+
+## Download
+
+Visit the [Downloads page](https://assetvault.app/download) and select your platform. Installers are code-signed and notarised.
+
+| Platform | Format | Minimum version |
+|---|---|---|
+| macOS | `.dmg` (universal) | macOS 12 Monterey |
+| Windows | `.msi` (NSIS) | Windows 10 21H2 |
+| Linux | `.AppImage` / `.deb` | Ubuntu 22.04 / glibc 2.35 |
+
+## macOS
+
+1. Download `AssetVault_x.y.z_universal.dmg`.
+2. Open the DMG and drag **AssetVault** to your Applications folder.
+3. On first open, macOS may show a quarantine dialog. Click **Open** or run:
+   ```bash
+   xattr -d com.apple.quarantine /Applications/AssetVault.app
+   ```
+4. Grant AssetVault access to folders containing your assets when prompted by the system privacy dialog.
+
+<Callout type="info">
+  The universal binary runs natively on both Apple Silicon (arm64) and Intel (x86_64) Macs.
+</Callout>
+
+## Windows
+
+1. Download `AssetVault_x.y.z_x64.msi`.
+2. Double-click the installer and follow the setup wizard.
+3. Windows SmartScreen may show a warning on first run — click **More info → Run anyway**. The installer is signed with a code-signing certificate.
+4. AssetVault installs to `%AppData%\AssetVault` by default. All local data (SQLite, FAISS index, thumbnails) are also stored under `%AppData%\AssetVault`.
+
+## Linux
+
+### AppImage (all distributions)
+
+```bash
+chmod +x AssetVault_x.y.z_amd64.AppImage
+./AssetVault_x.y.z_amd64.AppImage
+```
+
+No installation is required. The AppImage bundles all dependencies.
+
+### Debian / Ubuntu (`.deb`)
+
+```bash
+sudo dpkg -i assetvault_x.y.z_amd64.deb
+# If dependency errors appear:
+sudo apt-get install -f
+```
+
+<Callout type="warning">
+  Wayland is supported via XWayland on most Linux distributions. For native
+  Wayland compositing, set `WEBKIT_DISABLE_COMPOSITING_MODE=1` if you encounter
+  rendering artefacts.
+</Callout>
+
+## First launch
+
+On first launch, AssetVault:
+
+1. Creates a local SQLite database at the platform data directory.
+2. Downloads the **CLIP ViT-B/32** model weights (~340 MB) from a CDN if not already cached. This happens once and requires a network connection.
+3. Builds the FAISS index (empty at first).
+
+After that, AssetVault is **fully offline**. No asset data ever leaves your device.
+
+## Adding your first folder
+
+Click **+ Add Folder** in the sidebar, select a folder containing your assets, and AssetVault will start scanning immediately. Large libraries (50 000+ files) typically finish scanning in under 2 minutes on an M1 Mac.
+
+## Verifying the installation
+
+Open **Settings → About**. You should see the app version, sidecar version, and the Python interpreter path used by the bundled intelligence layer. If the sidecar fails to start, see [Troubleshooting](/docs/faq#sidecar).
+
+## Uninstalling
+
+AssetVault stores no system files outside the application bundle and the platform data directory. To uninstall completely:
+
+| Platform | Data directory |
+|---|---|
+| macOS | `~/Library/Application Support/com.assetvault.app` |
+| Windows | `%AppData%\AssetVault` |
+| Linux | `~/.local/share/assetvault` |
+
+Delete the application and the data directory to remove all traces.

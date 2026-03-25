@@ -1,0 +1,98 @@
+@import "tailwindcss";
+@import "@tailwindcss/typography";
+
+@theme {
+  --color-brand-50: oklch(0.97 0.02 285);
+  --color-brand-100: oklch(0.94 0.04 285);
+  --color-brand-200: oklch(0.88 0.08 285);
+  --color-brand-300: oklch(0.79 0.14 285);
+  --color-brand-400: oklch(0.67 0.20 285);
+  --color-brand-500: oklch(0.58 0.25 285);
+  --color-brand-600: oklch(0.50 0.27 285);
+  --color-brand-700: oklch(0.42 0.24 285);
+  --color-brand-800: oklch(0.34 0.19 285);
+  --color-brand-900: oklch(0.27 0.14 285);
+  --color-brand-950: oklch(0.18 0.09 285);
+
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+:root {
+  --bg: theme(colors.zinc.950);
+  --surface: theme(colors.zinc.900);
+  --border: theme(colors.zinc.800);
+  --text-primary: theme(colors.zinc.50);
+  --text-muted: theme(colors.zinc.400);
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: theme(colors.zinc.700);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: theme(colors.zinc.600);
+}
+
+/* Selection */
+::selection {
+  background-color: theme(colors.violet.500 / 30%);
+  color: theme(colors.zinc.50);
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid theme(colors.violet.500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Rehype pretty code — sync with zinc-900 bg */
+[data-rehype-pretty-code-figure] pre {
+  overflow-x: auto;
+}
+
+[data-rehype-pretty-code-figure] code {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+[data-line] {
+  padding-inline: 1.25rem;
+}
+
+[data-highlighted-line] {
+  background-color: theme(colors.violet.500 / 12%);
+  border-left: 2px solid theme(colors.violet.500);
+}
+
+[data-rehype-pretty-code-title] {
+  background: theme(colors.zinc.800);
+  border-bottom: 1px solid theme(colors.zinc.700);
+  padding: 0.5rem 1.25rem;
+  font-size: 0.75rem;
+  font-family: var(--font-mono);
+  color: theme(colors.zinc.400);
+  border-radius: 0.5rem 0.5rem 0 0;
+}

@@ -1,0 +1,102 @@
+---
+title: "AI Models"
+description: "Details of every AI model bundled with AssetVault — CLIP, EasyOCR, zero-shot classifiers, and the Python runtime."
+order: 11
+updatedAt: "2026-03-25"
+---
+
+AssetVault bundles all AI models locally. Nothing is sent to a cloud API. This page describes each model, how it's loaded, and what controls are available.
+
+## CLIP ViT-B/32
+
+The primary intelligence model. Used for all semantic search queries, image-to-image search, zero-shot classification, and similarity ranking.
+
+| Property | Value |
+|---|---|
+| Architecture | Vision Transformer (ViT-B/32) |
+| Training data | 400 M image-text pairs (WebImageText) |
+| Embedding dimension | 512 |
+| Image resolution | 224×224 |
+| Text token limit | 77 BPE tokens |
+| Model size | ~340 MB |
+| Licence | MIT (OpenAI) |
+
+The model is stored in a platform-specific cache directory and loaded into memory when the sidecar starts. It stays in memory for the lifetime of the sidecar process.
+
+<Callout type="info">
+  CLIP is run via ONNX Runtime (not PyTorch) in production builds. This
+  eliminates the PyTorch dependency (~1.5 GB) from the installer and reduces
+  cold-start time from ~8 seconds to ~1.5 seconds.
+</Callout>
+
+## EasyOCR
+
+Used to extract readable text from raster images, screenshots, and PDF pages.
+
+| Property | Value |
+|---|---|
+| Supported scripts | 80+ (Latin, CJK, Cyrillic, Arabic, Devanagari, …) |
+| Backend | CRAFT (text detection) + CRNN (recognition) |
+| Model size | ~100 MB (English-only), ~300 MB (multilingual) |
+| Licence | Apache 2.0 |
+
+OCR runs asynchronously after the CLIP embedding step. The extracted text is stored in SQLite and indexed in the FTS5 table. OCR can be disabled per-folder in **Settings → Indexing**.
+
+## Zero-shot tagger
+
+Tag classification uses CLIP zero-shot inference — no dedicated classification model is needed.
+
+The tagger (`tagger.py`) encodes a vocabulary of ~2 000 design-relevant tag strings using CLIP's text encoder, then computes cosine similarity between each asset's image vector and each tag vector. Tags scoring above the acceptance threshold (default: 0.35) are applied.
+
+<Callout type="tip">
+  You can extend the tag vocabulary by editing **Settings → Custom Tags**. Any
+  text phrase you add becomes a searchable tag concept — no retraining required.
+</Callout>
+
+## Description generator
+
+`description_generator.py` produces one-sentence natural-language summaries using prompt engineering against the CLIP model. The description is displayed in the asset detail panel and indexed in FTS5 for keyword search.
+
+Descriptions are generated lazily — only when you open an asset's detail view — to avoid slowing down the initial indexing pipeline.
+
+## Component classifier
+
+`component_classifier.py` classifies design assets into 40 UI component categories (button, card, hero, icon set, illustration, …) using zero-shot CLIP inference against component-description prompts.
+
+## Style classifier
+
+`style_classifier.py` classifies assets into design style families: flat, material, neumorphic, skeuomorphic, glassmorphism, dark mode, light mode, and others. Used to power the **Style** filter in the sidebar.
+
+## Intent parser
+
+`intent_parser.py` parses structured search filters from natural-language queries using rule-based NLU. It does **not** use a language model — all logic is deterministic and runs in < 1 ms.
+
+## Hardware acceleration
+
+| Platform | Acceleration | Notes |
+|---|---|---|
+| macOS (M1/M2/M3) | MPS (Metal) | Automatic, ~3× faster embedding |
+| Windows / Linux with CUDA GPU | CUDA | Automatic if `onnxruntime-gpu` detected |
+| All others | CPU (OpenBLAS) | Default fallback |
+
+AssetVault automatically selects the best available provider at sidecar startup. You can inspect the active provider in **Settings → About → Intelligence layer**.
+
+## Model updates
+
+Model files are versioned. When an update includes a new model version:
+
+- The sidecar downloads the new model file on first launch.
+- A background job re-embeds all existing assets with the new model.
+- Old vectors are kept until re-embedding is complete to avoid a gap in search coverage.
+
+You can trigger a manual model update check in **Settings → Models → Check for updates**.
+
+## Model cache location
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Caches/com.assetvault.app/models/` |
+| Windows | `%LocalAppData%\AssetVault\models\` |
+| Linux | `~/.cache/assetvault/models/` |
+
+Delete this directory to force a fresh model download on next launch.

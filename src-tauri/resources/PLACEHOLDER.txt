@@ -1,0 +1,1 @@
+# Placeholder — replaced by build-sidecar.ps1 before tauri build

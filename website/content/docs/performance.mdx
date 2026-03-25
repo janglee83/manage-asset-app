@@ -1,0 +1,107 @@
+---
+title: "Performance"
+description: "AssetVault performance characteristics, benchmarks, and tuning options for large design libraries."
+order: 13
+updatedAt: "2026-03-25"
+---
+
+AssetVault is designed to remain responsive at 200 000+ assets. This page covers benchmarks, bottlenecks, and tuning options.
+
+## Benchmarks
+
+All benchmarks are measured on an M1 Pro MacBook Pro (10-core CPU, 16 GB RAM) unless noted.
+
+### Scan performance
+
+| Files | Initial scan | Incremental (10 new files) |
+|---|---|---|
+| 5 000 | 8 seconds | < 1 second |
+| 50 000 | 70 seconds | < 1 second |
+| 200 000 | 5 minutes | < 1 second |
+
+Scan speed is primarily limited by thumbnail generation (~15 ms per image on M1).
+
+### Embedding performance
+
+| Files | CPU only (M1 Pro) | MPS (M1 Pro) | CUDA (RTX 3090) |
+|---|---|---|---|
+| 5 000 | 40 seconds | 15 seconds | 8 seconds |
+| 50 000 | 7 minutes | 2.5 minutes | 70 seconds |
+| 200 000 | 28 minutes | 10 minutes | 5 minutes |
+
+<Callout type="tip">
+  Embedding is the most time-consuming step. It runs entirely in the background
+  and does not block the UI. Search works (on already-embedded assets) while
+  embedding is in progress.
+</Callout>
+
+### Search latency
+
+| Library size | Cold start | Warm |
+|---|---|---|
+| 5 000 | 90 ms | 20 ms |
+| 50 000 | 95 ms | 25 ms |
+| 200 000 | 110 ms | 35 ms |
+
+Cold start includes loading the sidecar process and the CLIP model. The sidecar stays running after first use, so subsequent queries are "warm".
+
+### Memory usage
+
+| Library size | Baseline RAM | RAM during embedding |
+|---|---|---|
+| 5 000 | 180 MB | 400 MB |
+| 50 000 | 220 MB | 420 MB |
+| 200 000 | 380 MB | 640 MB |
+
+FAISS index memory scales at ~2 KB per asset (512 floats × 4 bytes). A 200 000-asset library occupies ~400 MB for the FAISS index alone.
+
+## Bottlenecks explained
+
+### Thumbnail generation
+
+Generating JPEG thumbnails accounts for 60–70% of initial scan time. Thumbnails are generated synchronously in the Rust process using `image-rs`. If your library contains many large RAW images (`.tiff`, `.heic`) this step is proportionally slower.
+
+**Tune it**: Reduce thumbnail resolution in **Settings → Performance → Thumbnail size** (default: 320×320). Halving the resolution reduces generation time by ~40%.
+
+### CLIP encoding
+
+CLIP ViT-B/32 processes one image at a time in CPU mode. Batch size is fixed at 32 in GPU mode.
+
+**Tune it**: Enable GPU acceleration if available (**Settings → Performance → GPU acceleration**). On Apple Silicon, MPS provides ~3x speedup. On CUDA GPUs, speedup is 3–6x depending on VRAM bandwidth.
+
+### FAISS search (very large libraries)
+
+For libraries above 500 000 assets, the flat FAISS index starts to add measurable search latency. AssetVault will offer to switch to an `IVFFlat` index via a prompt in the UI.
+
+**Tune it**: In **Settings → Performance → Search index**, select "Approximate (faster for large libraries)" to enable IVFFlat. This may occasionally miss very close matches in exchange for 5× faster search.
+
+## Disk usage
+
+| Artefact | Per-asset size | 50 K library |
+|---|---|---|
+| SQLite metadata | ~2 KB | ~100 MB |
+| Thumbnails (320px JPEG) | ~15 KB | ~750 MB |
+| FAISS index | ~2 KB | ~100 MB |
+| **Total** | ~19 KB | ~950 MB |
+
+<Callout type="warning">
+  Thumbnails are the largest storage consumer. You can clear the thumbnail
+  cache in **Settings → Storage → Clear thumbnail cache**. Thumbnails will be
+  regenerated on next view.
+</Callout>
+
+## Reducing background CPU usage
+
+By default, the embedding pipeline runs at full speed. To reduce CPU fan noise during embedding:
+
+- Go to **Settings → Performance → Embedding priority**.
+- Set to **Low** — the sidecar sleeps 50 ms between batches.
+- Set to **Idle only** — embedding pauses whenever the system load exceeds 60%.
+
+## Monitoring performance
+
+**Settings → Advanced → Show performance metrics** opens an overlay showing:
+- Sidecar process CPU and RAM usage
+- FAISS index memory consumption
+- SQLite WAL file size
+- Pending embedding queue length

@@ -1,241 +1,194 @@
 """
-AssetVault Python Sidecar Service
-Phase 2: Semantic search using CLIP + FAISS
-Communicates with Tauri Rust via stdio JSON-RPC
+AssetVault Semantic Search Sidecar.
+
+Transport: stdin/stdout JSON-RPC (newline-delimited).
+
+Request:  {"id": <uint64>, "method": "<name>", "params": {...}}
+Response: {"id": <uint64>, "result": {...}}
+Push:     {"id": null, "result": {"event": "<name>", "data": {...}}}
+
+Push events:
+  embed_progress  - during embed_batch: data: {done, total}
+  warmup_complete - after model load:   data: {model_info, needs_reindex}
+
+Methods:
+  health            {}                                    -> {status, version, model_info, index}
+  embed_asset       {asset_id, file_path, force?}         -> {ok, already_indexed}
+  embed_batch       {entries, skip_indexed?, batch_size?} -> {indexed, skipped, errors}
+  remove_asset      {asset_id}                            -> {ok}
+  search_semantic   {query, top_k?, min_score?,           -> {results:[{asset_id, score,
+                     weights?, favorite_ids?,                ranked_score, signals}]}
+                     folder_priorities?}
+  search_by_image   {file_path, top_k?, min_score?,       -> {results:[{asset_id, score,
+                     weights?, favorite_ids?,                ranked_score, signals}]}
+                     folder_priorities?}
+  rebuild_index     {}                                    -> {ok, total_evicted}
+  get_index_stats   {}                                    -> {total, dimension, ...}
+
+Ranking params (search_semantic / search_by_image)
+--------------------------------------------------
+  weights           {semantic, keyword, recency, favorite, folder}  (floats, default
+                    0.60/0.15/0.10/0.10/0.05 — re-normalised automatically)
+  favorite_ids      ["uuid", ...]  injected by the Rust host from the SQLite database
+  folder_priorities [{"prefix": "/path", "boost": 0.9}, ...]  from app settings
+
+  detect_duplicates {asset_hashes, similarity_threshold?, max_neighbours?,  -> {exact_pairs,
+                     skip_exact?, skip_similar?}                                similar_pairs,
+                                                                               total_exact,
+                                                                               total_similar,
+                                                                               threshold}
+
+  asset_hashes: [{"asset_id": str, "hash": str|null}, ...]
+    Each entry corresponds to one row from the assets table.  Assets without a
+    hash (null) are ignored for exact detection.  All indexed assets are scanned
+    for visual duplicates regardless of whether a hash is present.
 """
 
 from __future__ import annotations
 
-import sys
-import json
+# ---------------------------------------------------------------------------
+# IMPORTANT: Set thread-count limits BEFORE any scientific library is imported.
+#
+# On macOS, OpenBLAS / OpenMP create a shared semaphore for their thread pool.
+# If the semaphore is not released cleanly (e.g. due to a crash or unexpected
+# exit), Python's resource_tracker warns at shutdown and the process may be
+# killed by the OS.  Restricting each library to 1 thread prevents semaphore
+# creation entirely and also avoids the over-subscription that causes crashes
+# on Python 3.9 from macOS CommandLineTools.
+# ---------------------------------------------------------------------------
 import os
-import pickle
+
+os.environ.setdefault("OMP_NUM_THREADS",         "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS",    "1")
+os.environ.setdefault("MKL_NUM_THREADS",         "1")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS",  "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS",     "1")
+# Prevents HuggingFace fast tokenizers from spawning child processes.
+os.environ.setdefault("TOKENIZERS_PARALLELISM",  "false")
+# Silence the PyTorch "fork safety" warning; we never use torch.multiprocessing.
+os.environ.setdefault("PYTHONWARNINGS", "ignore::UserWarning:multiprocessing")
+
+import json
+import logging
+import sys
+import threading
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict
+
+logging.basicConfig(
+    stream=sys.stderr,
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+log = logging.getLogger("sidecar")
 
 
-# ── Lazy imports (only loaded when actually needed) ────────────────────────────
-_clip_model = None
-_clip_preprocess = None
-_faiss_index = None
-_asset_ids: List[str] = []  # Maps FAISS index position → asset id
-
-
-def _get_app_dir() -> Path:
-    """Returns data directory for storing faiss index and embeddings."""
+def _app_dir() -> Path:
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home()))
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path.home() / ".local" / "share"
-    d = base / "com.lethanhgiang.asset-vault"
+    d = base / "com.lethanhgiang.asset-vault" / "semantic"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-APP_DIR = _get_app_dir()
-FAISS_INDEX_PATH = APP_DIR / "faiss.index"
-ASSET_IDS_PATH = APP_DIR / "asset_ids.pkl"
+APP_DIR: Path = _app_dir()
+
+from embedder import Embedder
+from index_manager import IndexManager
+from ranker import Ranker
+from tagger import Tagger
+from design_language import DesignQueryParser
+from sidecar_handlers import SidecarContext, build_handlers
+
+_embedder      = Embedder()
+_index         = IndexManager(APP_DIR)
+_ranker        = Ranker()
+_tagger        = Tagger()
+_design_parser = DesignQueryParser()
+_stdout_lock   = threading.Lock()
 
 
-def _load_clip():
-    global _clip_model, _clip_preprocess
-    if _clip_model is None:
-        import torch
-        import clip  # openai-clip
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        _clip_model, _clip_preprocess = clip.load("ViT-B/32", device=device)
-    return _clip_model, _clip_preprocess
+def _push(event: str, data: Any) -> None:
+    msg = json.dumps({"id": None, "result": {"event": event, "data": data}})
+    with _stdout_lock:
+        sys.stdout.write(msg + "\n")
+        sys.stdout.flush()
 
 
-def _load_faiss():
-    global _faiss_index, _asset_ids
-    if _faiss_index is None:
-        import faiss
-        if FAISS_INDEX_PATH.exists():
-            _faiss_index = faiss.read_index(str(FAISS_INDEX_PATH))
-            if ASSET_IDS_PATH.exists():
-                with open(ASSET_IDS_PATH, "rb") as f:
-                    _asset_ids = pickle.load(f)
-        else:
-            # Create fresh 512-dim (CLIP ViT-B/32) flat L2 index
-            _faiss_index = faiss.IndexFlatIP(512)
-            _asset_ids = []
-    return _faiss_index, _asset_ids
+_ctx = SidecarContext(
+    embedder=_embedder,
+    index=_index,
+    ranker=_ranker,
+    tagger=_tagger,
+    design_parser=_design_parser,
+    push=_push,
+)
+HANDLERS = build_handlers(_ctx)
+
+def _startup() -> None:
+    needs_rebuild = not _index.load_or_create()
+    if needs_rebuild:
+        log.info("[sidecar] Index schema stale -- full re-index required.")
+
+    def _warmup():
+        try:
+            _embedder.warmup()
+            _push("warmup_complete", {
+                "model_info":    _embedder.model_info(),
+                "needs_reindex": needs_rebuild,
+            })
+            log.info("[sidecar] Warmup complete.")
+            # Pre-load EasyOCR models in the background so the first OCR
+            # request doesn't block on model initialisation.
+            try:
+                from ocr import warm_up as _ocr_warm_up, DEFAULT_LANGS
+                _ocr_warm_up(DEFAULT_LANGS)
+                log.info("[sidecar] OCR models ready.")
+            except Exception as ocr_exc:
+                log.warning("[sidecar] OCR warmup skipped: %s", ocr_exc)
+        except Exception as exc:
+            log.error("[sidecar] Warmup failed: %s", exc)
+
+    threading.Thread(target=_warmup, daemon=True).start()
 
 
-def _save_faiss():
-    import faiss
-    index, ids = _load_faiss()
-    faiss.write_index(index, str(FAISS_INDEX_PATH))
-    with open(ASSET_IDS_PATH, "wb") as f:
-        pickle.dump(ids, f)
+# ---------------------------------------------------------------------------
+# JSON-RPC stdio loop
+# ---------------------------------------------------------------------------
 
+def main() -> None:
+    _startup()
 
-# ── Handlers ──────────────────────────────────────────────────────────────────
-
-def handle_health(_params: Dict) -> Dict:
-    return {"status": "ok", "version": "0.1.0"}
-
-
-def handle_embed_image(params: Dict) -> Dict:
-    """Generate and store CLIP embedding for an image file."""
-    import torch
-    import numpy as np
-    from PIL import Image
-
-    file_path: str = params["file_path"]
-    asset_id: str = params["asset_id"]
-
-    model, preprocess = _load_clip()
-    index, ids = _load_faiss()
-
-    img = preprocess(Image.open(file_path).convert("RGB")).unsqueeze(0)
-    with torch.no_grad():
-        vec = model.encode_image(img).float().cpu().numpy()
-    # L2 normalize for cosine similarity via inner product
-    vec = vec / (np.linalg.norm(vec, axis=1, keepdims=True) + 1e-8)
-
-    index.add(vec)
-    ids.append(asset_id)
-    _save_faiss()
-
-    return {"asset_id": asset_id, "ok": True}
-
-
-def handle_search_text(params: Dict) -> Dict:
-    """Semantic text search: returns ranked list of asset_ids."""
-    import torch
-    import clip
-    import numpy as np
-
-    query: str = params["query"]
-    top_k: int = params.get("top_k", 20)
-
-    model, _ = _load_clip()
-    index, ids = _load_faiss()
-
-    if index.ntotal == 0:
-        return {"results": []}
-
-    tokens = clip.tokenize([query])
-    with torch.no_grad():
-        vec = model.encode_text(tokens).float().cpu().numpy()
-    vec = vec / (np.linalg.norm(vec, axis=1, keepdims=True) + 1e-8)
-
-    k = min(top_k, index.ntotal)
-    scores, indices = index.search(vec, k)
-
-    results = [
-        {"asset_id": ids[i], "score": float(scores[0][rank])}
-        for rank, i in enumerate(indices[0])
-        if i >= 0
-    ]
-    return {"results": results}
-
-
-def handle_search_image(params: Dict) -> Dict:
-    """Similar image search by file path."""
-    import torch
-    import numpy as np
-    from PIL import Image
-
-    file_path: str = params["file_path"]
-    top_k: int = params.get("top_k", 20)
-
-    model, preprocess = _load_clip()
-    index, ids = _load_faiss()
-
-    if index.ntotal == 0:
-        return {"results": []}
-
-    img = preprocess(Image.open(file_path).convert("RGB")).unsqueeze(0)
-    with torch.no_grad():
-        vec = model.encode_image(img).float().cpu().numpy()
-    vec = vec / (np.linalg.norm(vec, axis=1, keepdims=True) + 1e-8)
-
-    k = min(top_k, index.ntotal)
-    scores, indices = index.search(vec, k)
-
-    results = [
-        {"asset_id": ids[i], "score": float(scores[0][rank])}
-        for rank, i in enumerate(indices[0])
-        if i >= 0
-    ]
-    return {"results": results}
-
-
-def handle_remove_asset(params: Dict) -> Dict:
-    """Remove an asset embedding from the index (requires rebuild)."""
-    asset_id: str = params["asset_id"]
-    import faiss
-    import numpy as np
-
-    index, ids = _load_faiss()
-
-    if asset_id not in ids:
-        return {"ok": True}
-
-    # FAISS flat index doesn't support deletion; rebuild without the asset
-    pos = ids.index(asset_id)
-    ids.pop(pos)
-
-    # Re-add all vectors except the removed one
-    all_vecs = index.reconstruct_n(0, index.ntotal)  # (N, 512)
-    new_vecs = np.delete(all_vecs, pos, axis=0)
-
-    new_index = faiss.IndexFlatIP(512)
-    if new_vecs.shape[0] > 0:
-        new_index.add(new_vecs)
-
-    global _faiss_index
-    _faiss_index = new_index
-    _save_faiss()
-
-    return {"ok": True}
-
-
-HANDLERS = {
-    "health": handle_health,
-    "embed_image": handle_embed_image,
-    "search_text": handle_search_text,
-    "search_image": handle_search_image,
-    "remove_asset": handle_remove_asset,
-}
-
-
-# ── JSON-RPC stdio loop ────────────────────────────────────────────────────────
-
-def main():
-    for line in sys.stdin:
-        line = line.strip()
+    for raw_line in sys.stdin.buffer:
+        line = raw_line.strip()
         if not line:
             continue
+
+        req_id = None
         try:
-            req: Dict = json.loads(line)
-            method: str = req.get("method", "")
-            params: Dict = req.get("params", {})
+            req    = json.loads(line)
             req_id = req.get("id")
+            method = str(req.get("method", ""))
+            params = req.get("params") or {}
 
             handler = HANDLERS.get(method)
             if handler is None:
-                response = {
-                    "id": req_id,
-                    "error": f"Unknown method: {method}",
-                }
-            else:
-                result = handler(params)
-                response = {"id": req_id, "result": result}
+                raise ValueError(f"Unknown method: {method!r}")
+
+            result   = handler(params)
+            response = {"id": req_id, "result": result}
 
         except Exception as exc:
-            response = {
-                "id": req.get("id") if "req" in dir() else None,
-                "error": str(exc),
-            }
+            log.exception("[sidecar] Error handling request id=%s", req_id)
+            response = {"id": req_id, "error": str(exc)}
 
-        sys.stdout.write(json.dumps(response) + "\n")
-        sys.stdout.flush()
+        with _stdout_lock:
+            sys.stdout.write(json.dumps(response) + "\n")
+            sys.stdout.flush()
 
 
 if __name__ == "__main__":

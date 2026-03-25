@@ -1,0 +1,65 @@
+---
+title: "Multilingual Search"
+description: "Search your design library in over 100 languages — CLIP understands your query regardless of language."
+order: 9
+updatedAt: "2026-03-25"
+---
+
+AssetVault supports natural-language queries in over 100 languages without any configuration. CLIP's text encoder was trained on image-text pairs from many languages and generalises well to non-English queries.
+
+## Supported languages (sample)
+
+| Language | Quality | Notes |
+|---|---|---|
+| English | Excellent | Training-data dominant |
+| Spanish | Excellent | |
+| French | Excellent | |
+| German | Excellent | |
+| Japanese | Very good | CJK tokenised correctly |
+| Chinese (Simplified) | Very good | |
+| Korean | Very good | |
+| Arabic | Good | RTL, right-to-left layout in UI unaffected |
+| Portuguese | Excellent | |
+| Russian | Very good | |
+| Hindi | Good | |
+| Italian | Excellent | |
+| Dutch | Good | |
+
+Quality refers to CLIP's ability to match the query to visually relevant image results. English remains the most reliable baseline.
+
+## How multilingual search works
+
+CLIP's text encoder maps tokens to a shared multilingual embedding space trained via contrastive learning. A Japanese query for "青いアイコン" (blue icon) produces a vector geometrically close to the English query "blue icon" and to blue icon images themselves.
+
+<Callout type="info">
+  Multilingual capability emerges from CLIP's training data, not from a
+  dedicated translation layer. No internet connection or translation API is
+  used. Everything runs locally.
+</Callout>
+
+## Searching by file language
+
+If your assets include files with text content (PDFs, screenshots with UI text), the **OCR index** stores recognised text in its original language. SQLite FTS5 with the `unicode61` tokenizer handles CJK, Arabic, and other non-Latin scripts correctly for keyword matching.
+
+## Language detection
+
+AssetVault does not detect or classify the language of your query. The CLIP encoder handles multilingual input natively without needing to know which language is being used.
+
+## Limitations
+
+<Callout type="warning">
+  While CLIP generalises to many languages, semantic accuracy degrades for rare
+  languages or domain-specific vocabulary not well-represented in CLIP's
+  training data. If results seem poor for a language, try rephrasing in
+  English as a comparison.
+</Callout>
+
+- Extremely rare languages (fewer than ~1 M internet documents) may produce poor results.
+- Transliterated text (e.g., romanised Japanese/Chinese) may produce inconsistent results.
+- Very long queries in non-Latin scripts may be truncated at the CLIP token limit (77 tokens).
+
+## OCR language support
+
+The OCR engine (EasyOCR) supports 80+ languages during text extraction from images and PDFs. Languages are auto-detected per document — no configuration required. Supported scripts include Latin, Cyrillic, Arabic, Hebrew, CJK ideographs, Devanagari, Thai, Korean Hangul, and more.
+
+To see which languages were detected in an asset, open the asset detail panel and inspect the **Extracted text** field.

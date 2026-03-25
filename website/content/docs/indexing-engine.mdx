@@ -1,0 +1,94 @@
+---
+title: "Indexing Engine"
+description: "How CLIP vectors, FAISS indexes, and SQLite metadata combine to make your entire library searchable instantly."
+order: 6
+updatedAt: "2026-03-25"
+---
+
+The indexing engine is the backbone of AssetVault. It converts raw files into searchable representations across three complementary systems: a **FAISS vector index** for semantic similarity, a **SQLite full-text index** for keyword and tag matching, and a **metadata store** for structured filtering.
+
+## Three complementary indexes
+
+```
+File on disk
+     │
+     ├── CLIP encoder ──────▶ 512-dim float vector ──▶ FAISS index (semantic)
+     │
+     ├── Tagger + OCR ───────▶ tag strings ──────────▶ SQLite FTS5 table (keyword)
+     │
+     └── Scanner metadata ──▶ size, type, date, hash ▶ SQLite assets table (filter)
+```
+
+At query time, results from all three systems are **merged and re-ranked** by a multi-signal ranker.
+
+## CLIP vector encoding
+
+Each image or design asset is encoded into a **512-dimensional floating-point vector** using OpenAI's [CLIP ViT-B/32](https://openai.com/research/clip) model, run locally inside the Python sidecar.
+
+- Images are resized and center-cropped to 224×224 before encoding.
+- The vector represents the image's semantic content — scenes, objects, colors, and style.
+- Text queries are encoded with the same model's text encoder, producing a vector in the **same embedding space**. This is why "sunset over mountains" finds the right photo without any tags.
+
+<Callout type="info">
+  CLIP was trained on 400 million image-text pairs. It understands natural
+  language descriptions, visual concepts, and rough style terminology across
+  more than 100 languages.
+</Callout>
+
+## FAISS index structure
+
+[FAISS](https://github.com/facebookresearch/faiss) (Facebook AI Similarity Search) manages all vector storage and nearest-neighbour search.
+
+AssetVault uses a flat IP (inner product) index for libraries under 100 000 assets. For larger libraries, it automatically switches to an `IVFFlat` index with 256 Voronoi cells for faster approximate search:
+
+| Library size | Index type | Search latency |
+|---|---|---|
+| < 100 K assets | `IndexFlatIP` | < 5 ms |
+| 100 K–1 M assets | `IndexIVFFlat` (nprobe=32) | < 20 ms |
+| > 1 M assets | `IndexIVFPQ` (planned) | < 50 ms |
+
+The FAISS index is persisted to disk as a binary file in the app's data directory and memory-mapped on startup.
+
+## SQLite full-text search
+
+Tags, descriptions, OCR text, and filenames are indexed in a **SQLite FTS5 table** using the `unicode61` tokenizer. This enables:
+
+- Prefix matching (`photo*` matches "photography")
+- Phrase matching (`"dark mode"`)
+- Boolean operators (`logo AND svg AND NOT raster`)
+
+FTS5 queries are built by the Rust `search.rs` module. Input strings are sanitised and length-capped before being passed to SQLite to prevent injection.
+
+## Auto-tagging pipeline
+
+When a new asset is added:
+
+1. The Python sidecar runs a zero-shot CLIP classifier (`tagger.py`) against a vocabulary of ~2 000 design-relevant tags.
+2. Tags with confidence > 0.35 are accepted and written to SQLite.
+3. OCR (`ocr.py`) is run on raster images and PDFs. Recognised text is stored as a searchable field.
+4. An optional AI description (`description_generator.py`) produces a one-sentence natural-language summary.
+
+<Callout type="tip">
+  You can force re-tagging of any asset via **right-click → Re-analyse**. This
+  is useful after updating to a new CLIP model or after manually correcting a tag.
+</Callout>
+
+## Incremental indexing
+
+Assets are indexed incrementally. When a file changes:
+
+1. Its SHA-256 hash is compared with the stored hash.
+2. If the hash differs, the asset is re-encoded and the FAISS index is updated in-place (the old vector is removed and the new vector added atomically).
+3. Tags and descriptions are re-generated only if the file content changed.
+
+This means adding 10 new files to a 100 000-asset library takes seconds, not minutes.
+
+## Index health and repair
+
+If the FAISS index becomes corrupt (e.g., after a crash during a write), AssetVault detects the mismatch between the SQLite asset count and the FAISS vector count on startup and offers to **rebuild the index from scratch**. Rebuilding reuses all stored CLIP vectors — it does not re-run the CLIP encoder.
+
+<Callout type="warning">
+  Rebuilding the index from scratch requires re-embedding all assets. For a
+  50 000-asset library this takes approximately 7 minutes on an M1 Pro CPU.
+  GPU acceleration significantly reduces this time.
+</Callout>

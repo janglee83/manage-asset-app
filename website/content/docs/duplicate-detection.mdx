@@ -1,0 +1,91 @@
+---
+title: "Duplicate Detection"
+description: "Find exact duplicates, near-duplicates, and visually similar files across your entire design library."
+order: 10
+updatedAt: "2026-03-25"
+---
+
+AssetVault detects duplicate assets at three levels of fidelity: **exact** (byte-for-byte identical), **perceptual** (visually identical after resizing/recompression), and **semantic** (similar content, different presentation).
+
+## Detection modes
+
+| Mode | Method | Use case |
+|---|---|---|
+| Exact | SHA-256 hash comparison | Files copied or renamed |
+| Perceptual | pHash (block DCT) hamming distance | Resized, re-exported, or recompressed files |
+| Semantic | CLIP vector cosine similarity | Different crops, colour corrections, style variants |
+
+You can enable any combination in **Settings → Duplicate detection**.
+
+## Exact duplicates
+
+Exact detection is performed entirely in SQLite with zero sidecar overhead:
+
+```sql
+SELECT hash, COUNT(*) as count, GROUP_CONCAT(id) as asset_ids
+FROM assets
+WHERE deleted_at IS NULL
+GROUP BY hash
+HAVING count > 1
+```
+
+Two files with the same SHA-256 hash are byte-for-byte identical regardless of filename or location.
+
+<Callout type="info">
+  Exact duplicate detection runs on every scan automatically and adds no
+  measurable overhead because hashes are computed during the normal indexing
+  pipeline.
+</Callout>
+
+## Perceptual duplicates
+
+The Python sidecar computes a **perceptual hash (pHash)** using a block DCT algorithm:
+
+1. Image is resized to 32×32 greyscale.
+2. A discrete cosine transform is applied.
+3. The top-left 8×8 DCT coefficients are retained.
+4. Bits are set based on whether each coefficient is above or below the median.
+5. The result is a 64-bit hash.
+
+Two images are considered perceptually similar if their pHash hamming distance is ≤ 10 (configurable, range 0–64). Lower values mean stricter matching.
+
+<Callout type="tip">
+  A hamming distance of 10 correctly identifies JPEG artefacting, minor
+  crops, moderate resizing, and watermark removal as duplicates.
+  Increase the threshold to 15–20 to catch heavier edits.
+</Callout>
+
+## Semantic duplicates
+
+Semantic duplicate detection uses the existing CLIP vectors stored in FAISS. For each asset, the nearest neighbours (excluding itself) are retrieved and filtered by a cosine similarity threshold (default: 0.92).
+
+Since vectors are already computed, this scan is fast:
+
+| Library size | Semantic dup scan time |
+|---|---|
+| 5 000 assets | ~1 second |
+| 50 000 assets | ~12 seconds |
+| 200 000 assets | ~60 seconds |
+
+## Reviewing duplicates
+
+The **Duplicates** panel groups duplicate candidates into families. For each family you can:
+
+- **Keep one** — select the canonical file to keep; all others are moved to the OS trash.
+- **Keep all** — mark the family as reviewed without deleting.
+- **View diff** — side-by-side comparison of the two files with dimensions, file size, and modification date.
+- **Export list** — save the list of duplicates as CSV for batch review in a spreadsheet.
+
+<Callout type="warning">
+  Files moved to the OS trash via AssetVault are recoverable from the trash.
+  They are NOT permanently deleted immediately. Always verify the diff before
+  confirming a deletion.
+</Callout>
+
+## Bulk operations
+
+You can select multiple duplicate families and apply the same resolution rule (e.g., "keep the largest file") in bulk via the **Bulk tagger** panel. This uses the `bulk_tagger.py` sidecar module and processes families in batches of 100.
+
+## Relation graph
+
+For near-duplicate families with 3+ members, AssetVault renders a **relation graph** that visualises which files are similar to which using a force-directed layout. This makes it easy to identify the "original" file at the centre of a cluster.

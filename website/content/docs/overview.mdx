@@ -1,0 +1,56 @@
+---
+title: "Overview"
+description: "AssetVault is a local-first, AI-powered design asset search application that runs entirely on your machine."
+order: 1
+updatedAt: "2026-03-25"
+---
+
+AssetVault is a desktop application that turns your local design asset folders into a fully searchable, AI-indexed library — with no cloud upload, no subscription, and no internet connection required.
+
+<TechDiagram title="System overview" />
+
+## What problem does it solve?
+
+Design teams accumulate thousands of assets across dozens of folders: Figma exports, icons, mockups, brand kits, screenshots. Finding the right file becomes a time-consuming manual search. Cloud-based DAMs (Digital Asset Management tools) solve this by uploading everything to their servers — but at the cost of privacy, latency, and a monthly bill.
+
+AssetVault solves the same problem **locally**. Every asset is indexed on your machine, vector embeddings are computed on your hardware, and all search is performed in-process with no data ever leaving your device.
+
+## Key capabilities
+
+| Feature | Detail |
+|---|---|
+| Semantic search | CLIP text-to-image similarity over FAISS index |
+| Image search | Drag in any image — find visually similar files |
+| Multilingual queries | EN / Japanese / Vietnamese + 50+ CLIP languages |
+| Duplicate detection | Exact (SHA-256) + near-duplicate (cosine > 0.92) |
+| Auto-tagging | CLIP zero-shot classification against 200 labels |
+| Smart ignore | Skips `node_modules`, `.git`, caches automatically |
+| Priority indexing | Design files (`.fig`, `.sketch`, `.psd`) scanned first |
+| Offline-first | Works completely offline after initial model load |
+
+## Technology stack
+
+| Layer | Technology | Role |
+|---|---|---|
+| UI | React 18 + Tauri v2 | Cross-platform desktop shell |
+| Storage | SQLite (rusqlite) | Keyword search, tags, metadata |
+| Embeddings | CLIP `ViT-B/32` | 512-dim image + text vectors |
+| Vector index | FAISS (flat L2) | Sub-millisecond similarity search |
+| Language | Rust + Python sidecar | Commands + AI pipeline |
+
+## Supported platforms
+
+- **macOS** — Monterey, Ventura, Sonoma (Intel x64 + Apple Silicon M1/M2/M3)
+- **Windows** — Windows 10 64-bit, Windows 11
+- **Ubuntu** — 22.04 LTS, 24.04 LTS
+
+<Callout type="info">
+  The first launch takes 30–90 seconds while CLIP model weights are loaded into
+  memory.  Subsequent launches start the sidecar in under 5 seconds.
+</Callout>
+
+## Next steps
+
+- [Architecture](/docs/architecture) — deep dive into the system design
+- [Installation](/docs/installation) — get started in under 5 minutes
+- [Semantic Search](/docs/semantic-search) — understand how search works

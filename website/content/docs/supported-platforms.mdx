@@ -1,0 +1,77 @@
+---
+title: "Supported Platforms"
+description: "Platform compatibility matrix for AssetVault, including OS versions, architectures, and known limitations."
+order: 4
+updatedAt: "2026-03-25"
+---
+
+AssetVault is tested against the platforms listed below. All builds are produced from the same source tree via GitHub Actions.
+
+## Platform matrix
+
+| Platform | Architecture | Status | Min. version |
+|---|---|---|---|
+| macOS | arm64 (Apple Silicon) | ✅ Fully supported | macOS 12 Monterey |
+| macOS | x86_64 (Intel) | ✅ Fully supported | macOS 12 Monterey |
+| Windows | x86_64 | ✅ Fully supported | Windows 10 21H2 |
+| Windows | arm64 | ⚠️ Best-effort | Windows 11 |
+| Ubuntu | x86_64 | ✅ Fully supported | Ubuntu 22.04 |
+| Debian | x86_64 | ✅ Fully supported | Debian 12 Bookworm |
+| Fedora | x86_64 | ⚠️ Best-effort | Fedora 39 |
+| Other Linux | x86_64 | ⚠️ AppImage only | glibc ≥ 2.35 |
+
+<Callout type="info">
+  **Best-effort** means the platform is not included in the CI matrix but
+  receives community testing and bug reports are accepted. Breaking changes will
+  be flagged in release notes.
+</Callout>
+
+## macOS-specific notes
+
+- The universal binary is a fat binary containing both arm64 and x86_64 slices. Rosetta is not required.
+- File system events (live watcher) use `kqueue` via Tauri's `notify` backend. Performance is equivalent to Finder.
+- On macOS 13+, AssetVault uses the system color scheme (light/dark) automatically.
+- QUICK LOOK integration is available via right-click on any result in the asset grid.
+
+## Windows-specific notes
+
+- The installer requires no elevated permissions; it installs per-user.
+- The NSIS installer supports silent installation: `AssetVault_x.y.z_x64.msi /quiet`.
+- Windows Defender SmartScreen warnings appear until the signing certificate accumulates enough reputation. This typically resolves within a few releases.
+- The file watcher uses `ReadDirectoryChangesW`, the same mechanism used by VS Code.
+- Windows ARM64 builds are cross-compiled on x86_64 CI runners and receive less rigorous testing.
+
+## Linux-specific notes
+
+<Callout type="warning">
+  The `.deb` package installs a `assetvault.desktop` entry. If you use a
+  minimal window manager, you may need to install `libwebkit2gtk-4.1` and
+  `libgtk-3-0` manually.
+</Callout>
+
+```bash
+# Ubuntu 22.04 / 24.04 dependencies (if not installed)
+sudo apt-get install libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1
+```
+
+- Wayland is supported via XWayland. Set `WEBKIT_DISABLE_COMPOSITING_MODE=1` if rendering is blank.
+- The AppImage is self-contained and does **not** require FUSE 2 when using `--appimage-extract-and-run`.
+- Flatpak is planned but not yet available.
+
+## Hardware requirements
+
+| Component | Minimum | Recommended |
+|---|---|---|
+| CPU | 4 cores / 2 GHz | 8 cores / 3 GHz |
+| RAM | 4 GB | 16 GB |
+| Disk | 2 GB free | SSD with 10+ GB |
+| GPU | None required | Metal/CUDA (speeds embedding 3–10×) |
+
+CLIP embeddings run on CPU by default. When MPS (macOS Metal) or CUDA is available, the Python sidecar will automatically use it for significantly faster indexing.
+
+## Unsupported environments
+
+- **32-bit systems**: Not supported; FAISS requires 64-bit pointers.
+- **NAS / network drives as primary library**: File watching on network volumes is unreliable. Scanning works but live updates may be missed.
+- **Docker / headless Linux**: The WebView (WebKit/GTK) requires a display server. Headless operation is not supported.
+- **iOS / Android**: Mobile platforms are not planned.

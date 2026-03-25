@@ -1,15 +1,21 @@
-# Core dependencies
-torch>=2.0.0
-torchvision>=0.15.0
+# Core ML
+torch>=2.2.0
+torchvision>=0.17.0
 
-# CLIP - OpenAI's model for image-text matching
-git+https://github.com/openai/CLIP.git
+# Unified CLIP-compatible embedding API
+# - clip-ViT-B-32                                   image encoder (512-dim CLIP space)
+# - clip-ViT-B-32-multilingual-v1  multilingual text encoder (same 512-dim CLIP space)
+#   Supports EN, Japanese (日本語), Vietnamese (Tiếng Việt) and 50+ other languages.
+sentence-transformers>=3.0.0
 
-# FAISS - vector similarity search
-faiss-cpu>=1.7.4       # use faiss-gpu if CUDA is available
+# FAISS vector similarity search
+faiss-cpu>=1.8.0        # swap to faiss-gpu if CUDA is available
 
 # Image processing
-Pillow>=10.0.0
+Pillow>=10.4.0
 
 # Utilities
-numpy>=1.24.0
+numpy>=1.26.0
+
+# OCR text extraction — supports English, Japanese, Vietnamese and 80+ languages
+easyocr>=1.7.0

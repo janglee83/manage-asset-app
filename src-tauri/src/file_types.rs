@@ -2,6 +2,8 @@ use std::path::Path;
 
 /// Exactly the extensions the scanner is asked to index (Phase 1 target set).
 /// Stored lowercase; comparison must use `.to_lowercase()`.
+/// NOTE: kept for reference — the scanner now uses `is_supported()` so that
+/// every file type tracked by the watcher is also indexed on first scan.
 pub const SCAN_TARGETS: &[&str] = &["png", "jpg", "jpeg", "svg", "webp", "fig"];
 
 /// Broader image set used for thumbnail generation decisions.
@@ -19,7 +21,10 @@ pub const REFERENCE_EXTENSIONS: &[&str] = &["pdf", "doc", "docx", "ppt", "pptx",
 pub const VIDEO_EXTENSIONS: &[&str] = &["mp4", "mov", "avi", "mkv", "webm"];
 
 pub const FONT_EXTENSIONS: &[&str] = &["ttf", "otf", "woff", "woff2"];
-
+/// Returns true if this is a design-tool file (fig, sketch, xd, psd, ai, eps, indd).
+pub fn is_design_file(path: &Path) -> bool {
+    ext_matches(path, DESIGN_EXTENSIONS)
+}
 /// Returns true when the file should be included in a scan.
 pub fn is_scan_target(path: &Path) -> bool {
     ext_matches(path, SCAN_TARGETS)

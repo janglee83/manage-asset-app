@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Heart, FileImage, File } from "lucide-react";
+import { Heart, FileImage, File, X } from "lucide-react";
 import { useAssetStore } from "../store/assetStore";
+import { useT } from "../lib/i18n";
 import { getExtensionColor, isImage } from "../lib/utils";
 import type { Asset } from "../types";
 import clsx from "clsx";
@@ -38,16 +39,20 @@ interface CardProps {
   asset: Asset;
   isSelected: boolean;
   onSelect: (asset: Asset) => void;
+  /** Cosine similarity 0…01, shown as a badge when provided (image search mode). */
+  score?: number;
 }
 
-function GridCard({ asset, isSelected, onSelect }: CardProps) {
-  const { loadThumbnail, thumbnailCache, toggleFavorite } = useAssetStore();
+const GridCard = memo(function GridCard({ asset, isSelected, onSelect, score }: CardProps) {
+  // Targeted selector — only re-renders when THIS asset's thumbnail changes.
+  const thumb            = useAssetStore((s) => s.thumbnailCache[asset.id]);
+  const scheduleThumbLoad = useAssetStore((s) => s.scheduleThumbLoad);
+  const toggleFavorite   = useAssetStore((s) => s.toggleFavorite);
 
   useEffect(() => {
-    if (isImage(asset.extension)) loadThumbnail(asset.id);
+    if (isImage(asset.extension)) scheduleThumbLoad(asset.id);
   }, [asset.id, asset.extension]);
 
-  const thumb    = thumbnailCache[asset.id];
   const extColor = getExtensionColor(asset.extension);
 
   return (
@@ -88,6 +93,13 @@ function GridCard({ asset, isSelected, onSelect }: CardProps) {
           {asset.extension}
         </span>
 
+        {/* Similarity score badge (image search mode) */}
+        {score !== undefined && (
+          <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-xs font-semibold bg-violet-900/80 text-violet-300 border border-violet-600/50">
+            {Math.round(score * 100)}%
+          </span>
+        )}
+
         {/* Favorite button */}
         <button
           onClick={(e) => { e.stopPropagation(); toggleFavorite(asset.id); }}
@@ -114,17 +126,19 @@ function GridCard({ asset, isSelected, onSelect }: CardProps) {
       </div>
     </div>
   );
-}
+});
 
 // ─── Asset row (list mode) ────────────────────────────────────────────────────
-function ListRow({ asset, isSelected, onSelect }: CardProps) {
-  const { loadThumbnail, thumbnailCache, toggleFavorite } = useAssetStore();
+const ListRow = memo(function ListRow({ asset, isSelected, onSelect, score }: CardProps) {
+  // Targeted selector — only re-renders when THIS asset's thumbnail changes.
+  const thumb            = useAssetStore((s) => s.thumbnailCache[asset.id]);
+  const scheduleThumbLoad = useAssetStore((s) => s.scheduleThumbLoad);
+  const toggleFavorite   = useAssetStore((s) => s.toggleFavorite);
 
   useEffect(() => {
-    if (isImage(asset.extension)) loadThumbnail(asset.id);
+    if (isImage(asset.extension)) scheduleThumbLoad(asset.id);
   }, [asset.id, asset.extension]);
 
-  const thumb    = thumbnailCache[asset.id];
   const extColor = getExtensionColor(asset.extension);
 
   return (
@@ -162,6 +176,11 @@ function ListRow({ asset, isSelected, onSelect }: CardProps) {
 
       {/* Favorite + extension */}
       <div className="flex items-center gap-2 shrink-0">
+        {score !== undefined && (
+          <span className="px-1.5 py-0.5 rounded text-xs font-semibold bg-violet-900/70 text-violet-300 border border-violet-600/40">
+            {Math.round(score * 100)}%
+          </span>
+        )}
         <span
           className="hidden sm:inline px-1.5 py-0.5 rounded text-xs font-mono"
           style={{ backgroundColor: extColor + "22", color: extColor }}
@@ -180,7 +199,7 @@ function ListRow({ asset, isSelected, onSelect }: CardProps) {
       </div>
     </div>
   );
-}
+});
 
 // ─── Main grid component ──────────────────────────────────────────────────────
 export function AssetGrid() {
@@ -194,18 +213,46 @@ export function AssetGrid() {
     loadMore,
     searchQuery,
     viewMode,
+    // Image similarity
+    imageSearchActive,
+    imageSearchResults,
+    imageSearchLoading,
+    imageSearchError,
+    imageSearchFile,
+    imageSearchMinScore,
+    clearImageSearch,
   } = useAssetStore();
+
+  // ── Derived data — memoised so object identity is stable across renders ─────
+  // Apply min-score filter client-side for instant slider feedback.
+  const filteredResults = useMemo(
+    () => imageSearchResults.filter((r) => r.score >= imageSearchMinScore),
+    [imageSearchResults, imageSearchMinScore],
+  );
+  const activeAssets = useMemo(
+    () => imageSearchActive ? filteredResults.map((r) => r.asset) : assets,
+    [imageSearchActive, filteredResults, assets],
+  );
+  const scoreMap = useMemo(
+    () => imageSearchActive
+      ? new Map(filteredResults.map((r) => [r.asset.id, r.score]))
+      : new Map<string, number>(),
+    [imageSearchActive, filteredResults],
+  );
+  const displayTotal = imageSearchActive ? filteredResults.length : total;
+  const hasMore      = !imageSearchActive && activeAssets.length < total;
+  const queryName    = imageSearchFile?.split(/[/\\]/).pop();
 
   const isGrid        = viewMode === "grid";
   const scrollRef     = useRef<HTMLDivElement>(null);
   const containerRef  = useRef<HTMLDivElement>(null);
   const cols          = useGridCols(containerRef, isGrid);
   const cardH         = isGrid ? CARD_H_GRID : CARD_H_LIST;
+  const t             = useT();
 
   // Number of virtual rows
-  const dataRows = isGrid ? Math.ceil(assets.length / cols) : assets.length;
-  // +1 sentinel row for load-more / loading indicator
-  const totalRows = assets.length < total ? dataRows + 1 : dataRows;
+  const dataRows  = isGrid ? Math.ceil(activeAssets.length / cols) : activeAssets.length;
+  const totalRows = hasMore ? dataRows + 1 : dataRows;
 
   const rowVirtualizer = useVirtualizer({
     count: totalRows,
@@ -220,7 +267,7 @@ export function AssetGrid() {
     const items = rowVirtualizer.getVirtualItems();
     if (!items.length) return;
     const last = items[items.length - 1];
-    if (last.index >= dataRows && !isLoading && assets.length < total) {
+    if (last.index >= dataRows && !isLoading && hasMore) {
       loadMore();
     }
   }, [rowVirtualizer.getVirtualItems()]);
@@ -235,7 +282,7 @@ export function AssetGrid() {
   // Keyboard up/down inside grid (left/right handled globally in useKeyboardShortcuts)
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      const count = assets.length;
+      const count = activeAssets.length;
       if (!count) return;
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -249,40 +296,91 @@ export function AssetGrid() {
         setSelectedIndex(prev);
       }
     },
-    [assets.length, selectedIndex, cols, isGrid, setSelectedIndex]
+    [activeAssets.length, selectedIndex, cols, isGrid, setSelectedIndex]
   );
 
   const handleSelect = useCallback((asset: Asset) => {
-    const idx = assets.findIndex((a) => a.id === asset.id);
+    const idx = activeAssets.findIndex((a) => a.id === asset.id);
     setSelectedIndex(idx);
-  }, [assets, setSelectedIndex]);
+  }, [activeAssets, setSelectedIndex]);
 
-  if (assets.length === 0 && !isLoading) {
+  // ── Empty states ────────────────────────────────────────────────────────────
+  if (imageSearchLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
+        <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-medium text-slate-400">{t.imageSearch.searching}</p>
+        <p className="text-xs text-slate-600">{queryName}</p>
+      </div>
+    );
+  }
+
+  if (imageSearchError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
+        <FileImage size={40} className="opacity-25 text-red-400" />
+        <p className="text-sm font-medium text-red-400">{t.general.error}</p>
+        <p className="text-xs text-slate-600 max-w-xs text-center">{imageSearchError}</p>
+        <button onClick={clearImageSearch} className="text-xs text-violet-400 hover:text-violet-300 underline mt-1">
+          {t.imageSearch.clearResults}
+        </button>
+      </div>
+    );
+  }
+
+  if (activeAssets.length === 0 && !isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
         <FileImage size={48} className="opacity-25" />
-        <p className="text-sm font-medium">No assets found</p>
-        <p className="text-xs text-slate-600 text-center max-w-xs">
-          {searchQuery.text
-            ? `No results for "${searchQuery.text}" — try a different term.`
-            : "Add a folder from the sidebar to start indexing."}
+        <p className="text-sm font-medium">
+          {imageSearchActive ? t.imageSearch.noResults : t.search.noAssets}
         </p>
+        <p className="text-xs text-slate-600 text-center max-w-xs">
+          {imageSearchActive
+            ? t.imageSearch.noResultsDesc
+            : searchQuery.text
+            ? t.search.noResultsFor.replace("{q}", searchQuery.text)
+            : t.search.addFolderHint}
+        </p>
+        {imageSearchActive && (
+          <button onClick={clearImageSearch} className="text-xs text-violet-400 hover:text-violet-300 underline">
+            {t.imageSearch.clearResults}
+          </button>
+        )}
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Result count */}
-      <div className="flex items-center justify-between mb-2 shrink-0">
-        <p className="text-xs text-slate-500">
-          {total.toLocaleString()} {total === 1 ? "asset" : "assets"}
-          {assets.length < total && ` · showing ${assets.length.toLocaleString()}`}
-        </p>
-        {isLoading && (
-          <span className="text-xs text-slate-600 animate-pulse">Loading…</span>
-        )}
-      </div>
+      {/* ── Image similarity banner ─────────────────────────────────────────── */}
+      {imageSearchActive && (
+        <div className="flex items-center justify-between mb-2 px-2 py-1.5 rounded-lg bg-violet-900/20 border border-violet-700/40 shrink-0">
+          <p className="text-xs text-violet-300 truncate min-w-0 mr-2">
+            <span className="font-semibold">{displayTotal}</span> {t.imageSearch.similarTo}{" "}
+            <span className="italic truncate">{queryName}</span>
+          </p>
+          <button
+            onClick={clearImageSearch}
+            className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-200 transition-colors shrink-0"
+          >
+            <X size={11} /> {t.imageSearch.exitSearch}
+          </button>
+        </div>
+      )}
+
+      {/* ── Result count (normal mode) ──────────────────────────────────────── */}
+      {!imageSearchActive && (
+        <div className="flex items-center justify-between mb-2 shrink-0">
+          <p className="text-xs text-slate-500">
+            {total.toLocaleString()} {total === 1 ? "asset" : "assets"}
+            {assets.length < total && ` · showing ${assets.length.toLocaleString()}`}
+          </p>
+          {isLoading && (
+            <span className="text-xs text-slate-600 animate-pulse">{t.search.loading}</span>
+          )}
+        </div>
+      )}
 
       {/* Virtualised scroll container */}
       <div
@@ -327,7 +425,7 @@ export function AssetGrid() {
               if (isGrid) {
                 // Each virtual row contains 'cols' cards
                 const startIdx = vRow.index * cols;
-                const row = assets.slice(startIdx, startIdx + cols);
+                const row = activeAssets.slice(startIdx, startIdx + cols);
 
                 return (
                   <div
@@ -351,6 +449,7 @@ export function AssetGrid() {
                         asset={asset}
                         isSelected={selectedAsset?.id === asset.id}
                         onSelect={handleSelect}
+                        score={scoreMap.get(asset.id)}
                       />
                     ))}
                   </div>
@@ -358,7 +457,7 @@ export function AssetGrid() {
               }
 
               // List mode: one asset per virtual row
-              const asset = assets[vRow.index];
+              const asset = activeAssets[vRow.index];
               if (!asset) return null;
               return (
                 <div
@@ -376,6 +475,7 @@ export function AssetGrid() {
                     asset={asset}
                     isSelected={selectedAsset?.id === asset.id}
                     onSelect={handleSelect}
+                    score={scoreMap.get(asset.id)}
                   />
                 </div>
               );

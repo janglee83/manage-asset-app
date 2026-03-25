@@ -1,0 +1,85 @@
+---
+title: "Image Search"
+description: "Drag and drop any image into AssetVault to find visually similar assets across your entire library."
+order: 8
+updatedAt: "2026-03-25"
+---
+
+Image search lets you find assets by example — drag in a screenshot, reference image, or any JPEG/PNG, and AssetVault finds the most visually similar files in your library.
+
+## How to use it
+
+1. Drag any image from Finder, Explorer, or your desktop onto the search bar in AssetVault.
+2. The `ImageSearchDropzone` accepts `.png`, `.jpg`, `.jpeg`, `.webp`, and `.gif` files up to 20 MB.
+3. AssetVault encodes the image using CLIP and returns visually similar assets immediately.
+
+Alternatively, right-click any asset in the grid and select **Find similar** to use that asset as a query image.
+
+## Technical pipeline
+
+```
+User drops image file
+        ↓
+React: FileReader → base64 data URI (or file path for local assets)
+        ↓
+Rust: invoke("image_search", { image_path })
+        ↓
+Sidecar: load image → resize to 224×224 → CLIP image encoder → 512-dim vector
+        ↓
+FAISS: cosine-similarity search → top-200 candidates
+        ↓
+Ranker: multi-signal re-rank (semantic + recency + favourite)
+        ↓
+Rust: fetch Asset rows from SQLite → return to UI
+```
+
+<Callout type="info">
+  Image queries use the same CLIP model as text queries. CLIP's shared embedding
+  space means that an image of a "dark dashboard" and the text query
+  "dark dashboard" return similar (though not identical) results.
+</Callout>
+
+## Accepted input formats
+
+| Format | Supported | Notes |
+|---|---|---|
+| JPEG (`.jpg`, `.jpeg`) | ✅ | All baseline and progressive |
+| PNG (`.png`) | ✅ | Including PNG with transparency |
+| WebP (`.webp`) | ✅ | Lossy and lossless |
+| GIF (`.gif`) | ✅ | First frame only |
+| SVG (`.svg`) | ❌ | SVGs are rasterised server-side before encoding |
+| Figma export | ✅ | @1x PNG exports work best |
+| Screenshots | ✅ | Any source (Retina, 4K etc.) |
+
+## Finding similar assets from within the library
+
+When you right-click any asset and choose **Find similar**, AssetVault retrieves the pre-computed CLIP vector from the FAISS index (no re-encoding needed) and immediately returns the nearest neighbours. This is the fastest path — typically 3–5 ms end-to-end.
+
+## Combining image and text
+
+You can refine an image query with a text modifier. After dropping an image:
+
+1. The search bar becomes active.
+2. Type a text modifier like `dark theme` or `iOS style`.
+3. AssetVault blends the image vector and the text vector using a weighted sum:
+
+```
+query_vector = 0.7 × image_vector + 0.3 × text_vector
+```
+
+This is called **cross-modal search** and allows you to say "find something like this but in dark mode."
+
+<Callout type="tip">
+  Cross-modal search works best when the text modifier describes a style or
+  colour scheme rather than a different object. Mixing "this cat photo" +
+  "car" will return confusing results.
+</Callout>
+
+## Privacy
+
+Dropped images are:
+
+- Loaded into memory, encoded, and discarded.
+- Never written to disk.
+- Never sent over the network.
+- Removed from memory when the search panel is closed or a new search begins.

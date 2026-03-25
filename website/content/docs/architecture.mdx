@@ -1,0 +1,103 @@
+---
+title: "Architecture"
+description: "How AssetVault's Rust core, Python sidecar, and FAISS index work together to deliver local AI search."
+order: 2
+updatedAt: "2026-03-25"
+---
+
+AssetVault is built as a **multi-process local application** with three distinct execution contexts: the Tauri/Rust host, the React frontend, and a Python sidecar process. Each layer owns a clear slice of responsibility.
+
+<TechDiagram title="Full system architecture" />
+
+## Layer responsibilities
+
+### React frontend
+
+The React UI communicates with the Rust backend exclusively through **Tauri's type-safe IPC commands** (`invoke()`). It never reads the filesystem, queries SQLite, or calls the sidecar directly. This strict boundary means the frontend can be iterated on at full React speed without touching native code.
+
+The store is built with **Zustand** and split into domain slices:
+- `assetSlice` — search results, pagination, selection
+- `scanSlice` — scan progress events
+- `embeddingSlice` — FAISS embed progress
+- `intelligenceSlice` — descriptions, recommendations, families
+
+### Rust host
+
+The Rust layer serves as the **trusted authority** for all state and I/O:
+
+- **SQLite** — all metadata, tags, descriptions, thumbnails, and search history are persisted here via `rusqlite`. The schema is forward-migrated in `db.rs`.
+- **File scanner** — `scanner.rs` performs prioritised WalkDir traversal using `filter_entry` hooks so entire ignored subtrees (`.git`, `node_modules`) are pruned without descending into them.
+- **Thumbnail generation** — performed synchronously using `image-rs`, stored as JPEG in a per-asset cache directory.
+- **Hasher** — SHA-256 computed via a chunked read loop (256 KB chunks) so large files don't spike memory.
+
+### Python sidecar
+
+The Python process is spawned as a **subprocess** communicating over stdin/stdout using a line-delimited JSON-RPC 2.0 protocol. It handles all AI operations that would be unsafe or impractical to run inside the Rust process:
+
+- CLIP model loading and image/text encoding (`embedder.py`)
+- FAISS index management — add, search, persist (`index_manager.py`)
+- Zero-shot tag classification (`tagger.py`)
+- OCR extraction with EasyOCR (`ocr.py`)
+- Duplicate detection (`duplicate_detector.py`)
+- Design token extraction — colors, typography (`design_tokens.py`)
+- Intent parsing — NL → structured filters (`intent_parser.py`)
+
+<Callout type="info">
+  The sidecar is stateless with respect to SQLite. It never reads or writes the
+  database. Rust reads context from the DB, sends it to the sidecar, and writes
+  results back. This makes the sidecar replaceable and testable in isolation.
+</Callout>
+
+## Data flow: semantic search
+
+```
+User types "blue mobile dashboard"
+        ↓
+React → invoke("semantic_search", { query })
+        ↓
+Rust reads favorite_ids from SQLite, injects into request
+        ↓
+Rust → sidecar: { method: "semantic_search", params: {...} }
+        ↓
+Python: run CLIP text encoder → 512-dim query vector
+Python: FAISS search → top-K (asset_id, cosine_score) pairs
+Python: multi-signal ranker (semantic + recency + favorite + folder)
+        ↓
+Rust receives ranked hits, fetches full Asset rows from SQLite
+        ↓
+React receives SemanticSearchResult, renders AssetGrid
+```
+
+## Data flow: scan
+
+```
+User adds folder
+        ↓
+Rust: WalkDir with filter_entry (ignore.rs prunes subtrees)
+Rust: priority_score() per file → sort design files first
+        ↓
+For each file:
+  - SHA-256 hash via hasher.rs
+  - INSERT OR REPLACE into assets table
+  - Thumbnail generated via image-rs
+        ↓
+Background: Rust → sidecar: embed_batch (50 assets at a time)
+Sidecar: CLIP image encoder → vectors → FAISS upsert
+        ↓
+Tauri event "scan_progress" emitted → React updates progress bar
+```
+
+## Security model
+
+All command inputs are validated in Rust before being forwarded:
+
+- Asset IDs are validated as non-empty, path-character-free UUID strings
+- File paths are verified to reside within a user-selected watched folder
+- Sidecar communication is process-local — no network socket is opened
+- The sidecar spawns with `OMP_NUM_THREADS=1` to prevent fork-bomb from OpenBLAS
+
+See [Security](/docs/security) for the full threat model.
+
+## Why not a single process?
+
+Python's CLIP and FAISS libraries pull in NumPy, PyTorch (or ONNX Runtime), and OpenBLAS — a dependency tree that cannot be compiled into a Rust binary without a Python runtime. Running them in a subprocess also provides fault isolation: if the sidecar crashes, the Rust host detects it via the `dead` flag and emits a `sidecar_dead` event, allowing the UI to show a recovery option without losing the SQLite state.

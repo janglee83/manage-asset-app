@@ -1,0 +1,117 @@
+---
+title: "FAQ"
+description: "Frequently asked questions about AssetVault — installation, privacy, performance, and troubleshooting."
+order: 15
+updatedAt: "2026-03-25"
+---
+
+## General
+
+### Is AssetVault free?
+
+AssetVault offers a free tier (up to 5 000 indexed assets) and a paid Pro plan for unlimited assets with priority support. Pricing is on the [pricing page](https://assetvault.app/pricing).
+
+### Does AssetVault require an internet connection?
+
+**No** — after the initial model download, AssetVault is fully offline. Your assets never leave your device. The only outbound request is an optional version check, which can be disabled in Settings.
+
+### Does AssetVault modify my original files?
+
+**Never.** AssetVault reads your files to generate thumbnails and embeddings but does not write to them under any circumstances. Your originals are untouched.
+
+### What happens to my data if I stop using AssetVault?
+
+Your original files are never moved or modified. Deleting the app and its data directory (described in [Installation](/docs/installation#uninstalling)) removes all traces of AssetVault from your system.
+
+---
+
+## Privacy
+
+### Does AssetVault send my images to any AI API?
+
+No. CLIP, EasyOCR, and all other AI models run locally inside the Python sidecar process. No image, vector, or metadata is sent to any external server.
+
+### Can I use AssetVault with a client's confidential files?
+
+Yes. Because all processing is local, AssetVault is safe to use with confidential client assets. Nothing is logged to a remote service.
+
+---
+
+## Performance
+
+### Why is the first search slow?
+
+The CLIP model is loaded into memory on first use. After that, it stays resident and queries are fast (~20–35 ms). Cold start takes ~1.5 seconds with the ONNX runtime backend.
+
+### My library has 200 000 files — how long will embedding take?
+
+Approximately 28 minutes on CPU (M1 Pro). Enable GPU acceleration in **Settings → Performance** to reduce this to ~10 minutes (MPS) or ~5 minutes (CUDA). Embedding runs in the background and you can search already-indexed assets while it runs.
+
+### AssetVault is using a lot of CPU — is that normal?
+
+Yes, during initial embedding. The Python sidecar runs CLIP inference on each image, which is CPU/GPU intensive. Once all assets are embedded, CPU usage drops to near zero. You can reduce background CPU usage in **Settings → Performance → Embedding priority**.
+
+---
+
+## Troubleshooting {#sidecar}
+
+### The sidecar failed to start / intelligence features are unavailable
+
+1. Open **Settings → About** and check the sidecar path.
+2. On macOS, ensure the sidecar binary is not quarantined: `xattr -d com.apple.quarantine /path/to/sidecar`.
+3. Check that the model cache directory is writable.
+4. On Linux, ensure the sidecar binary has execute permission: `chmod +x ./sidecar`.
+5. Re-install the app and allow it to re-download model weights.
+
+If the problem persists, check the log file in the platform data directory: `logs/sidecar.log`.
+
+### Search returns no results despite having indexed files
+
+1. Check the embedding progress indicator. If it shows 0% or is stalled, the sidecar may not be running.
+2. Go to **Settings → Index → Rebuild index** to force a re-embed of all assets.
+3. Verify that the FAISS index file exists in the app data directory.
+
+### Files are not being detected when added to a watched folder
+
+- Check **Settings → Watched Folders** — confirm the folder is listed as active.
+- The file watcher debounces events by 500 ms — wait a moment and refresh.
+- On network volumes: the OS-level file watcher may not emit events for remote changes. Use **Scan → Rescan now** to pick up changes manually.
+
+### Thumbnails are missing or show broken icons
+
+1. Go to **Settings → Storage → Clear thumbnail cache**.
+2. Thumbnails will regenerate on next view.
+3. If specific file types never generate thumbnails, check [Limitations](/docs/limitations) — some formats (e.g., HEIC on Linux) require additional system libraries.
+
+### The duplicate detection panel is empty but I know I have duplicates
+
+Duplicate detection does not run automatically on first scan. Trigger it via **Tools → Scan for duplicates**. Semantic duplicate detection requires all assets to be fully embedded first.
+
+---
+
+## Development
+
+### Can I contribute to AssetVault?
+
+Yes. AssetVault is open-source on GitHub. See the `CONTRIBUTING.md` file in the repository for setup instructions and contribution guidelines.
+
+### How do I build from source?
+
+See the [Architecture](/docs/architecture) page for the tech stack. You'll need Rust (stable), Node.js 20+, and Python 3.11+. Run:
+
+```bash
+npm install
+npm run tauri build
+```
+
+The CI workflow in `.github/workflows/` documents the exact build steps for each platform.
+
+### Where are the logs?
+
+| Platform | Log location |
+|---|---|
+| macOS | `~/Library/Logs/com.assetvault.app/` |
+| Windows | `%AppData%\AssetVault\logs\` |
+| Linux | `~/.local/share/assetvault/logs/` |
+
+Enable verbose logging in **Settings → Advanced → Log level → Debug** if you need more detail.

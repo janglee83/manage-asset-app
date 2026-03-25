@@ -1,43 +1,61 @@
+/**
+ * Combined Zustand store — assembles all domain slices.
+ *
+ * Slice implementations live in ./slices/ (one file per concern):
+ *   assetSlice        — assets, folders, search, favorites
+ *   thumbnailSlice    — thumbnail cache + LRU eviction
+ *   scanSlice         — scan progress
+ *   imageSearchSlice  — visual image-similarity search
+ *   embeddingSlice    — CLIP/FAISS index stats + embed-all
+ *   recoverySlice     — broken-path detection and repair
+ *   intelligenceSlice — recommendations, descriptions, version chains, query rewriting
+ */
+
 import { create } from "zustand";
-import { api } from "../lib/api";
 import type {
   Asset,
-  SearchQuery,
-  WatchedFolder,
-  ScanProgress,
   AppStats,
+  AssetDescription,
+  BrokenAsset,
+  BuildFamiliesResult,
+  ConfidenceResult,
+  DetectVersionsResult,
+  EmbedBatchResult,
+  IndexStats,
+  QueryRewrite,
+  RecommendationResult,
+  ScanProgress,
+  SearchQuery,
   ViewMode,
+  WatchedFolder,
 } from "../types";
 
-interface AssetStore {
-  // Assets
+import { createAssetSlice }        from "./slices/assetSlice";
+import { createThumbnailSlice }    from "./slices/thumbnailSlice";
+import { createImageSearchSlice }  from "./slices/imageSearchSlice";
+import { createEmbeddingSlice }    from "./slices/embeddingSlice";
+import { createRecoverySlice }     from "./slices/recoverySlice";
+import { createIntelligenceSlice } from "./slices/intelligenceSlice";
+
+// Resolved image-similarity hit (asset + cosine score)
+export interface SimilarityResult {
+  asset: Asset;
+  score: number;
+}
+
+// Full store interface — union of all slices.
+export interface AssetStore {
+  // ── Asset / folder slice ─────────────────────────────────────────────────
   assets: Asset[];
   total: number;
   selectedAsset: Asset | null;
-  selectedIndex: number;          // -1 = none; used for keyboard navigation
-  thumbnailCache: Record<string, string>; // id -> base64
-
-  // Search state
+  selectedIndex: number;
   searchQuery: SearchQuery;
-
-  // UI state (persisted across searches)
   viewMode: ViewMode;
-  extFilters: string[];           // active extension filter chips
-
-  // Folders
+  extFilters: string[];
   watchedFolders: WatchedFolder[];
-
-  // Scan progress
-  scanProgress: ScanProgress | null;
-  isScanning: boolean;
-
-  // Stats
   stats: AppStats | null;
-
-  // Loading
   isLoading: boolean;
-
-  // Actions
   setSelectedAsset: (asset: Asset | null) => void;
   setSelectedIndex: (idx: number) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -49,158 +67,89 @@ interface AssetStore {
   addFolder: (path: string) => Promise<void>;
   removeFolder: (path: string) => Promise<void>;
   rescanFolder: (path: string) => Promise<void>;
+  loadStats: () => Promise<void>;
+  toggleFavorite: (id: string) => Promise<void>;
+  removeAsset: (id: string) => Promise<void>;
+
+  // ── Thumbnail slice ──────────────────────────────────────────────────────
+  thumbnailCache: Record<string, string>;
+  _thumbKeys: string[];
+  loadThumbnail: (id: string) => Promise<void>;
+  scheduleThumbLoad: (id: string) => void;
+
+  // ── Scan slice ───────────────────────────────────────────────────────────
+  scanProgress: ScanProgress | null;
+  isScanning: boolean;
   setScanProgress: (p: ScanProgress | null) => void;
   setIsScanning: (v: boolean) => void;
-  toggleFavorite: (id: string) => Promise<void>;
-  loadThumbnail: (id: string) => Promise<void>;
-  loadStats: () => Promise<void>;
-  removeAsset: (id: string) => Promise<void>;
+
+  // ── Image search slice ───────────────────────────────────────────────────
+  imageSearchActive: boolean;
+  imageSearchResults: SimilarityResult[];
+  imageSearchLoading: boolean;
+  imageSearchError: string | null;
+  imageSearchFile: string | null;
+  imageSearchMinScore: number;
+  imageSearchTopK: number;
+  runImageSearch: (filePath: string) => Promise<void>;
+  clearImageSearch: () => void;
+  setImageSearchParams: (params: { minScore?: number; topK?: number }) => void;
+
+  // ── Embedding slice ──────────────────────────────────────────────────────
+  indexStats: IndexStats | null;
+  indexStatsLoading: boolean;
+  embedAllLoading: boolean;
+  embedAllResult: EmbedBatchResult | null;
+  autoTagLoading: boolean;
+  autoTagProgress: { done: number; total: number } | null;
+  loadIndexStats: () => Promise<void>;
+  runEmbedAll: () => Promise<void>;
+  runAutoTagAll: () => Promise<void>;
+  setAutoTagProgress: (p: { done: number; total: number } | null) => void;
+
+  // ── Recovery slice ───────────────────────────────────────────────────────
+  brokenAssets: BrokenAsset[];
+  brokenLoading: boolean;
+  detectBrokenAssets: () => Promise<void>;
+  applyRecovery: (assetId: string, newPath: string) => Promise<void>;
+  skipBrokenAsset: (assetId: string) => void;
+
+  // ── Intelligence slice ───────────────────────────────────────────────────
+  recommendations: RecommendationResult | null;
+  recommendationsLoading: boolean;
+  getRecommendations: (assetId: string) => Promise<void>;
+  clearRecommendations: () => void;
+  assetDescription: AssetDescription | null;
+  descriptionLoading: boolean;
+  getDescription: (assetId: string) => Promise<void>;
+  componentFamilies: BuildFamiliesResult | null;
+  familiesLoading: boolean;
+  buildComponentFamilies: () => Promise<void>;
+  versionChains: DetectVersionsResult | null;
+  versionChainsLoading: boolean;
+  detectVersionChains: () => Promise<void>;
+  lastRewrite: QueryRewrite | null;
+  rewriteQuery: (query: string) => Promise<QueryRewrite>;
+  lastConfidence: ConfidenceResult | null;
+  recordInteraction: (
+    query: string,
+    assetId: string,
+    type: "click" | "favorite" | "copy",
+    semanticScore: number,
+    sessionKey?: string,
+  ) => Promise<void>;
 }
 
 export const useAssetStore = create<AssetStore>((set, get) => ({
-  assets: [],
-  total: 0,
-  selectedAsset: null,
-  selectedIndex: -1,
-  thumbnailCache: {},
-  searchQuery: { limit: 60, offset: 0, sort_by: "modified_at" },
-  viewMode: "grid",
-  extFilters: [],
-  watchedFolders: [],
+  ...createAssetSlice(set, get),
+  ...createThumbnailSlice(set, get),
+  // Scan slice fields
   scanProgress: null,
   isScanning: false,
-  stats: null,
-  isLoading: false,
-
-  setSelectedAsset: (asset) =>
-    set((s) => ({
-      selectedAsset: asset,
-      selectedIndex: asset ? s.assets.findIndex((a) => a.id === asset.id) : -1,
-    })),
-
-  setSelectedIndex: (idx) =>
-    set((s) => ({
-      selectedIndex: idx,
-      selectedAsset: idx >= 0 && idx < s.assets.length ? s.assets[idx] : null,
-    })),
-
-  setViewMode: (mode) => set({ viewMode: mode }),
-
-  setExtFilters: (exts) => {
-    set({ extFilters: exts });
-    get().setSearchQuery({ extensions: exts.length > 0 ? exts : undefined });
-  },
-
-  setSearchQuery: (query) => {
-    set((s) => ({
-      searchQuery: { ...s.searchQuery, ...query, offset: 0 },
-    }));
-    get().runSearch();
-  },
-
-  runSearch: async () => {
-    const q = { ...get().searchQuery, offset: 0 };
-    set({ isLoading: true });
-    try {
-      const result = await api.search(q);
-      set({ assets: result.assets, total: result.total, searchQuery: { ...q } });
-    } catch (e) {
-      console.error("Search error:", e);
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-
-  loadMore: async () => {
-    const { searchQuery, assets, total, isLoading } = get();
-    if (isLoading || assets.length >= total) return;
-    const nextOffset = assets.length;
-    const q = { ...searchQuery, offset: nextOffset };
-    set({ isLoading: true });
-    try {
-      const result = await api.search(q);
-      set((s) => ({
-        assets: [...s.assets, ...result.assets],
-        searchQuery: { ...q },
-      }));
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-
-  loadFolders: async () => {
-    const folders = await api.getFolders();
-    set({ watchedFolders: folders });
-  },
-
-  addFolder: async (path) => {
-    set({ isScanning: true });
-    try {
-      await api.addFolder(path);
-      await get().loadFolders();
-      await get().runSearch();
-      await get().loadStats();
-    } finally {
-      set({ isScanning: false, scanProgress: null });
-    }
-  },
-
-  removeFolder: async (path) => {
-    await api.removeFolder(path);
-    await get().loadFolders();
-    await get().runSearch();
-    await get().loadStats();
-  },
-
-  rescanFolder: async (path) => {
-    set({ isScanning: true });
-    try {
-      await api.rescanFolder(path);
-      await get().runSearch();
-      await get().loadStats();
-    } finally {
-      set({ isScanning: false, scanProgress: null });
-    }
-  },
-
   setScanProgress: (p) => set({ scanProgress: p }),
-  setIsScanning: (v) => set({ isScanning: v }),
-
-  toggleFavorite: async (id) => {
-    const newVal = await api.toggleFavorite(id);
-    set((s) => ({
-      assets: s.assets.map((a) =>
-        a.id === id ? { ...a, favorite: newVal } : a
-      ),
-      selectedAsset:
-        s.selectedAsset?.id === id
-          ? { ...s.selectedAsset, favorite: newVal }
-          : s.selectedAsset,
-    }));
-  },
-
-  loadThumbnail: async (id) => {
-    if (get().thumbnailCache[id]) return;
-    const thumb = await api.getThumbnail(id);
-    if (thumb) {
-      set((s) => ({
-        thumbnailCache: { ...s.thumbnailCache, [id]: thumb },
-      }));
-    }
-  },
-
-  loadStats: async () => {
-    const stats = await api.getStats();
-    set({ stats });
-  },
-
-  removeAsset: async (id) => {
-    await api.removeAsset(id);
-    set((s) => ({
-      assets: s.assets.filter((a) => a.id !== id),
-      selectedAsset: s.selectedAsset?.id === id ? null : s.selectedAsset,
-      total: s.total - 1,
-    }));
-    await get().loadStats();
-  },
+  setIsScanning:   (v) => set({ isScanning: v }),
+  ...createImageSearchSlice(set, get),
+  ...createEmbeddingSlice(set, get),
+  ...createRecoverySlice(set, get),
+  ...createIntelligenceSlice(set, get),
 }));

@@ -2,14 +2,17 @@ import { useState } from "react";
 import { FolderOpen, FolderPlus, Trash2, RefreshCw, ChevronDown, ChevronRight, Star, Filter } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAssetStore } from "../store/assetStore";
+import { useActivityLock } from "../hooks/useActivityLock";
+import { useT } from "../lib/i18n";
+import { Tooltip } from "./Tooltip";
 import { IMAGE_EXTENSIONS, DESIGN_EXTENSIONS } from "../lib/utils";
 import clsx from "clsx";
 
 const EXTENSION_GROUPS = [
-  { label: "Images", exts: IMAGE_EXTENSIONS },
-  { label: "Design", exts: DESIGN_EXTENSIONS },
-  { label: "PDF",    exts: ["pdf"] },
-  { label: "Video",  exts: ["mp4", "mov", "avi", "webm"] },
+  { labelKey: "images" as const, exts: IMAGE_EXTENSIONS },
+  { labelKey: "design" as const, exts: DESIGN_EXTENSIONS },
+  { labelKey: "pdf"    as const, exts: ["pdf"] },
+  { labelKey: "video"  as const, exts: ["mp4", "mov", "avi", "webm"] },
 ];
 
 export function Sidebar() {
@@ -18,13 +21,15 @@ export function Sidebar() {
     addFolder,
     removeFolder,
     rescanFolder,
-    isScanning,
     searchQuery,
     setSearchQuery,
     extFilters,
     setExtFilters,
     stats,
   } = useAssetStore();
+
+  const { canModifyFolders, lockTooltip } = useActivityLock();
+  const t = useT();
 
   const [foldersOpen, setFoldersOpen] = useState(true);
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -70,37 +75,43 @@ export function Sidebar() {
       {/* Stats */}
       {stats && (
         <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-          <p className="text-slate-400 text-xs mb-1">Total indexed</p>
+          <p className="text-slate-400 text-xs mb-1">{t.sidebar.totalIndexed}</p>
           <p className="text-2xl font-bold text-slate-100">{stats.total_assets.toLocaleString()}</p>
-          <p className="text-xs text-slate-500 mt-1">{stats.favorites} favorites · {stats.watched_folders} folders</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {stats.favorites} {t.sidebar.favorites} · {stats.watched_folders} {t.sidebar.foldersLabel}
+          </p>
         </div>
       )}
 
       {/* Folders */}
       <section>
-        <button
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => setFoldersOpen((v) => !v)}
-          className="flex items-center justify-between w-full text-slate-300 font-medium px-1 mb-2"
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setFoldersOpen((v) => !v)}
+          className="flex items-center justify-between w-full text-slate-300 font-medium px-1 mb-2 cursor-pointer select-none"
         >
           <span className="flex items-center gap-1.5">
             {foldersOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            Folders
+            {t.sidebar.foldersSection}
           </span>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleAddFolder(); }}
-            disabled={isScanning}
-            className="p-0.5 rounded text-slate-400 hover:text-violet-400 hover:bg-slate-700 transition-colors disabled:opacity-40"
-            title="Add folder"
-          >
-            <FolderPlus size={14} />
-          </button>
-        </button>
+          <Tooltip text={canModifyFolders ? t.sidebar.addFolderTip : lockTooltip("scan")} position="right">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleAddFolder(); }}
+              disabled={!canModifyFolders}
+              className="p-0.5 rounded text-slate-400 hover:text-violet-400 hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <FolderPlus size={14} />
+            </button>
+          </Tooltip>
+        </div>
 
         {foldersOpen && (
           <ul className="space-y-0.5">
             {watchedFolders.length === 0 && (
               <li className="text-slate-500 text-xs px-2 py-1 italic">
-                No folders added yet
+                {t.sidebar.noFolders}
               </li>
             )}
             {watchedFolders.map((f) => {
@@ -112,20 +123,24 @@ export function Sidebar() {
                     {name}
                   </span>
                   <div className="hidden group-hover:flex items-center gap-0.5">
-                    <button
-                      onClick={() => rescanFolder(f.path)}
-                      className="p-0.5 rounded text-slate-500 hover:text-slate-300 transition-colors"
-                      title="Rescan"
-                    >
-                      <RefreshCw size={11} />
-                    </button>
-                    <button
-                      onClick={() => removeFolder(f.path)}
-                      className="p-0.5 rounded text-slate-500 hover:text-red-400 transition-colors"
-                      title="Remove"
-                    >
-                      <Trash2 size={11} />
-                    </button>
+                    <Tooltip text={canModifyFolders ? t.sidebar.rescanTip : lockTooltip("scan")} position="top">
+                      <button
+                        onClick={() => canModifyFolders && rescanFolder(f.path)}
+                        disabled={!canModifyFolders}
+                        className="p-0.5 rounded text-slate-500 hover:text-slate-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <RefreshCw size={11} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip text={canModifyFolders ? t.sidebar.removeFolderTip : lockTooltip("scan")} position="top">
+                      <button
+                        onClick={() => canModifyFolders && removeFolder(f.path)}
+                        disabled={!canModifyFolders}
+                        className="p-0.5 rounded text-slate-500 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </Tooltip>
                   </div>
                 </li>
               );
@@ -142,29 +157,31 @@ export function Sidebar() {
         >
           {filtersOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           <Filter size={13} />
-          Filters
+          {t.sidebar.filtersSection}
         </button>
 
         {filtersOpen && (
           <div className="space-y-3">
             {/* Favorites */}
-            <button
-              onClick={toggleFavorites}
-              className={clsx(
-                "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors",
-                searchQuery.favorites_only
-                  ? "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              )}
-            >
-              <Star size={13} className={searchQuery.favorites_only ? "fill-yellow-400 text-yellow-400" : ""} />
-              Favorites only
-            </button>
+            <Tooltip text={t.sidebar.favoritesOnlyTip} position="right">
+              <button
+                onClick={toggleFavorites}
+                className={clsx(
+                  "flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-xs transition-colors",
+                  searchQuery.favorites_only
+                    ? "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                )}
+              >
+                <Star size={13} className={searchQuery.favorites_only ? "fill-yellow-400 text-yellow-400" : ""} />
+                {t.sidebar.favoritesOnly}
+              </button>
+            </Tooltip>
 
             {/* Extension groups */}
             {EXTENSION_GROUPS.map((group) => (
-              <div key={group.label}>
-                <p className="text-xs text-slate-500 px-2 mb-1">{group.label}</p>
+              <div key={group.labelKey}>
+                <p className="text-xs text-slate-500 px-2 mb-1">{t.sidebar[group.labelKey]}</p>
                 <div className="flex flex-wrap gap-1 px-2">
                   {group.exts.slice(0, 6).map((ext) => (
                     <button
@@ -191,7 +208,7 @@ export function Sidebar() {
                 className="flex items-center gap-1.5 w-full text-xs text-slate-400 hover:text-slate-200 px-2 mb-1 transition-colors"
               >
                 {dateOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                Date range
+                {t.sidebar.dateRange}
                 {(fromIso || toIso) && (
                   <span className="ml-auto text-violet-400">●</span>
                 )}
@@ -199,7 +216,7 @@ export function Sidebar() {
               {dateOpen && (
                 <div className="px-2 space-y-2">
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">From</label>
+                    <label className="block text-xs text-slate-500 mb-0.5">{t.sidebar.from}</label>
                     <input
                       type="date"
                       value={fromIso}
@@ -208,7 +225,7 @@ export function Sidebar() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-0.5">To</label>
+                    <label className="block text-xs text-slate-500 mb-0.5">{t.sidebar.to}</label>
                     <input
                       type="date"
                       value={toIso}
@@ -221,7 +238,7 @@ export function Sidebar() {
                       onClick={() => setSearchQuery({ from_date: undefined, to_date: undefined })}
                       className="text-xs text-slate-500 hover:text-slate-300 px-1 transition-colors"
                     >
-                      Clear dates
+                      {t.sidebar.clearDates}
                     </button>
                   )}
                 </div>
