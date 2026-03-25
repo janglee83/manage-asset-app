@@ -8,6 +8,7 @@
 
 import type { Metadata } from "next";
 import { buildFaqJsonLd, buildHomeMetadata } from "@/lib/seo";
+import { en } from "@/messages/en";
 import { NavBar } from "@/components/landing/NavBar";
 import { HeroSection } from "@/components/landing/HeroSection";
 import { FeaturesSection } from "@/components/landing/FeaturesSection";
@@ -16,14 +17,14 @@ import { PlatformSection } from "@/components/landing/PlatformSection";
 import { WhyLocalFirst } from "@/components/landing/WhyLocalFirst";
 import { DownloadSection } from "@/components/landing/DownloadSection";
 import { DocsCTASection } from "@/components/landing/DocsCTASection";
-import { FAQSection, faqs } from "@/components/landing/FAQSection";
+import { FAQSection } from "@/components/landing/FAQSection";
 import { Footer } from "@/components/landing/Footer";
 
 export const metadata: Metadata = buildHomeMetadata();
 
 export default function HomePage() {
   const faqJsonLd = buildFaqJsonLd(
-    faqs.map((f) => ({ question: f.q, answer: f.a })),
+    en.faq.items.map((f) => ({ question: f.q, answer: f.a })),
   );
 
   return (

@@ -1,8 +1,12 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowRight, BookOpen } from "lucide-react";
 import { DOCS_NAV } from "@/lib/nav";
+import { useI18n } from "@/lib/i18n";
 
 export function DocsCTASection() {
+  const { t } = useI18n();
   const featured = DOCS_NAV.flatMap((s) => s.items).slice(0, 6);
 
   return (
@@ -14,24 +18,22 @@ export function DocsCTASection() {
             <div className="inline-flex items-center gap-2 rounded-lg bg-violet-500/10 px-3 py-1.5 mb-6 ring-1 ring-violet-500/20">
               <BookOpen className="h-3.5 w-3.5 text-violet-400" />
               <span className="text-xs font-medium text-violet-300">
-                Full documentation
+                {t.docsCta.badge}
               </span>
             </div>
             <h2 className="text-4xl font-bold tracking-tight text-zinc-50 mb-4">
-              Comprehensive docs,
-              <br />
-              open source code
+              {t.docsCta.title.split("\n").map((line, i, arr) => (
+                <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
+              ))}
             </h2>
             <p className="text-lg text-zinc-400 leading-relaxed mb-8">
-              Every component is documented — the SQLite schema, Rust command
-              surface, Python sidecar JSON-RPC protocol, FAISS index structure,
-              and security model.
+              {t.docsCta.description}
             </p>
             <Link
               href="/docs"
               className="group inline-flex items-center gap-2 rounded-xl bg-zinc-800 border border-zinc-700 px-6 py-3 text-sm font-medium text-zinc-200 hover:bg-zinc-700 hover:border-zinc-600 transition-colors"
             >
-              Browse documentation
+              {t.docsCta.cta}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
           </div>

@@ -1,26 +1,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# AssetVault — Windows production release pipeline
+# AssetVault — Multi-platform production release pipeline
 #
 # Trigger: push a semver tag  git tag v1.2.3 && git push origin v1.2.3
 #
 # What this does:
-#   1. Builds the Python sidecar (PyInstaller --onedir) for Windows.
-#   2. Runs `tauri build --target x86_64-pc-windows-msvc`.
-#   3. Signs the NSIS installer with the Tauri updater key.
-#      Optional: code-signs the binary with a Windows PFX cert.
-#   4. Creates a draft GitHub release, uploads the installer + .sig.
-#   5. Uploads latest.json (auto-update manifest) to the same release.
+#   1. Creates a draft GitHub release.
+#   2. In parallel, builds for Windows x64, macOS Universal, and Linux x64.
+#   3. Each build: compiles Python sidecar (PyInstaller --onedir),
+#      then runs `tauri build` and uploads artifacts to the draft release.
 #
 # Required GitHub secrets
 # ────────────────────────
-#   TAURI_SIGNING_PRIVATE_KEY          — ed25519 private key (output of scripts/keygen.sh)
+#   TAURI_SIGNING_PRIVATE_KEY          — ed25519 private key (scripts/keygen.sh)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — passphrase for the key above
 #
-# Optional secrets for Windows code-signing (SmartScreen compliance)
+# Optional secrets for Windows code-signing
 #   WINDOWS_CERTIFICATE                — base64-encoded .pfx certificate
 #   WINDOWS_CERTIFICATE_PASSWORD       — .pfx password
-#
-# See scripts/keygen.sh for key generation instructions.
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Release
@@ -30,26 +26,60 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
-# Allow one release to run at a time; cancel any in-progress run for the same
-# tag if a new one is triggered (e.g. an amended push).
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
-  # Windows x64 release build
+  # Step 1: Create the draft GitHub release (fast — no build required)
   # ───────────────────────────────────────────────────────────────────────────
-  release-windows:
-    name: Build Windows installer
-    runs-on: windows-latest
+  create-release:
+    name: Create draft release
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.releaseId }}
 
     steps:
-      # ── Source ──────────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Toolchains ──────────────────────────────────────────────────────────
+      - name: Create draft release
+        id: create
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "AssetVault ${{ github.ref_name }}"
+          releaseBody: |
+            ## What's Changed
+            See [CHANGELOG.md](https://github.com/janglee83/manage-asset-app/blob/main/CHANGELOG.md)
+            for full release notes.
+
+            ### Downloads
+            | Platform | File |
+            |---|---|
+            | macOS Apple Silicon (M1+) | `AssetVault_*_aarch64.dmg` |
+            | macOS Intel x64 | `AssetVault_*_x64.dmg` |
+            | Windows x64 | `AssetVault_*_x64-setup.exe` |
+            | Linux AppImage | `AssetVault_*_amd64.AppImage` |
+            | Linux .deb | `asset-vault_*_amd64.deb` |
+          releaseDraft: true
+          prerelease: false
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Step 2a: Windows x64
+  # ───────────────────────────────────────────────────────────────────────────
+  release-windows:
+    name: Build Windows x64
+    needs: create-release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
@@ -71,23 +101,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      # ── Frontend dependencies ────────────────────────────────────────────
       - name: Install Node dependencies
         run: npm ci
 
-      # ── Python sidecar (PyInstaller) ─────────────────────────────────────
-      # Installs the Python service deps and compiles main.py into a
-      # self-contained directory (--onedir).  The output is placed at
-      # src-tauri/resources/asset-vault-sidecar/ so Tauri bundles it.
       - name: Build Python sidecar
         shell: pwsh
         run: ./scripts/build-sidecar.ps1
 
-      # ── Optional: Windows code-signing ──────────────────────────────────
-      # If WINDOWS_CERTIFICATE is set, decode the base64 PFX and configure
-      # Tauri/NSIS to sign the binary and installer.
-      # Delete or leave empty to skip code-signing (unsigned builds still work,
-      # but Windows SmartScreen will show an "Unknown Publisher" warning).
       - name: Decode code-signing certificate
         if: env.WINDOWS_CERTIFICATE != ''
         id: write-cert
@@ -100,42 +120,144 @@ jobs:
           [System.IO.File]::WriteAllBytes($certPath, $certBytes)
           echo "cert-path=$certPath" >> $env:GITHUB_OUTPUT
 
-      # ── Tauri build + GitHub release ─────────────────────────────────────
-      # tauri-apps/tauri-action:
-      #   * runs `npm run build` then `cargo tauri build`
-      #   * creates a draft GitHub release
-      #   * uploads the NSIS installer (.exe), its updater signature (.exe.sig),
-      #     and the latest.json update manifest
-      - name: Build Tauri app and create GitHub release
+      - name: Build and upload to release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Updater signing (required for auto-update to verify downloads)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Windows code-signing (optional)
           TAURI_WINDOWS_PFX_FILE: ${{ steps.write-cert.outputs.cert-path || '' }}
           TAURI_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "AssetVault ${{ github.ref_name }}"
-          releaseBody: |
-            ## What's Changed
-            See [CHANGELOG.md](https://github.com/janglee83/manage-asset-app/blob/main/CHANGELOG.md)
-            for full release notes.
-
-            ### Installation
-            Download `AssetVault_*_x64-setup.exe` below and run it.
-            The installer does **not** require administrator rights
-            (current-user install mode).
-          releaseDraft: true
-          prerelease: false
-          # Target Windows x64; avoids cross-compiling Rust crates for other
-          # platforms on this runner.
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: --target x86_64-pc-windows-msvc --config tauri.release.conf.json
 
-      # ── Cleanup ──────────────────────────────────────────────────────────
       - name: Remove decoded certificate
         if: always() && steps.write-cert.outputs.cert-path != ''
         shell: pwsh
         run: Remove-Item -Force "${{ steps.write-cert.outputs.cert-path }}" -ErrorAction SilentlyContinue
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Step 2b: macOS Universal (aarch64 + x86_64)
+  # ───────────────────────────────────────────────────────────────────────────
+  release-macos:
+    name: Build macOS Universal
+    needs: create-release
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Set up Rust (stable) with both macOS targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust build artefacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Python sidecar
+        run: bash ./scripts/build-sidecar.sh
+
+      - name: Build aarch64 (Apple Silicon) and upload
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: --target aarch64-apple-darwin --config tauri.release.conf.json
+
+      - name: Build x86_64 (Intel) and upload
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: --target x86_64-apple-darwin --config tauri.release.conf.json
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Step 2c: Linux x64 (AppImage + .deb)
+  # ───────────────────────────────────────────────────────────────────────────
+  release-linux:
+    name: Build Linux x64
+    needs: create-release
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache Rust build artefacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build Python sidecar
+        run: bash ./scripts/build-sidecar.sh
+
+      - name: Build and upload to release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: --target x86_64-unknown-linux-gnu --config tauri.release.conf.json
+
+

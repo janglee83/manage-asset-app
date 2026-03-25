@@ -1,4 +1,7 @@
+"use client";
+
 import { Monitor, Apple, Cpu } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 const platforms = [
   {
@@ -46,19 +49,19 @@ const platforms = [
 ];
 
 export function PlatformSection() {
+  const { t } = useI18n();
   return (
     <section className="py-24 sm:py-32 border-t border-zinc-800/50">
       <div className="mx-auto max-w-7xl px-6">
         <div className="mx-auto max-w-2xl text-center mb-16">
           <p className="text-sm font-semibold uppercase tracking-widest text-violet-400 mb-3">
-            Platform Support
+            {t.platforms.sectionLabel}
           </p>
           <h2 className="text-4xl font-bold tracking-tight text-zinc-50">
-            Works where you work
+            {t.platforms.title}
           </h2>
           <p className="mt-4 text-lg text-zinc-400">
-            Native installers for every major operating system and CPU
-            architecture.
+            {t.platforms.description}
           </p>
         </div>
 
@@ -72,7 +75,7 @@ export function PlatformSection() {
               >
                 {/* Platform icon */}
                 <div
-                  className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${platform.color} mb-5 shadow-lg`}
+                  className={`inline-flex h-11 w-11 items-center justify-center rounded-xl bg-linear-to-br ${platform.color} mb-5 shadow-lg`}
                 >
                   <Icon className="h-5 w-5 text-white" />
                 </div>
@@ -113,26 +116,24 @@ export function PlatformSection() {
         <div className="mt-10 rounded-2xl border border-zinc-800 bg-zinc-900/30 px-8 py-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-zinc-200">
-              Apple Silicon M1 / M2 / M3
+              {t.platforms.accelerationTitle}
             </p>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Native arm64 execution — no Rosetta, 3× faster CLIP embedding via
-              Metal GPU (MPS)
+              {t.platforms.accelerationDesc}
             </p>
           </div>
           <div>
             <p className="text-sm font-medium text-zinc-200">
-              CUDA GPU acceleration
+              {t.platforms.cudaTitle}
             </p>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Detected automatically on Windows / Linux — reduces embedding time
-              by up to 6×
+              {t.platforms.cudaDesc}
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-zinc-200">CPU fallback</p>
+            <p className="text-sm font-medium text-zinc-200">{t.platforms.cpuTitle}</p>
             <p className="text-xs text-zinc-500 mt-0.5">
-              OpenBLAS CPU inference on all platforms with no additional setup
+              {t.platforms.cpuDesc}
             </p>
           </div>
         </div>

@@ -1,3 +1,7 @@
+"use client";
+
+import { useI18n } from "@/lib/i18n";
+
 const steps = [
   {
     label: "React",
@@ -50,16 +54,17 @@ const steps = [
 ];
 
 export function ArchitectureSection() {
+  const { t } = useI18n();
   return (
     <section className="relative overflow-hidden py-24 sm:py-32">
       {/* Background noise */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 [background-image:radial-gradient(rgba(124,58,237,0.04)_1px,transparent_1px)] [background-size:20px_20px]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(124,58,237,0.04)_1px,transparent_1px)] bg-size-[20px_20px]"
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 h-[500px] w-[600px] -translate-x-1/3 rounded-full bg-violet-600/6 blur-3xl"
+        className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 h-125 w-150 -translate-x-1/3 rounded-full bg-violet-600/6 blur-3xl"
       />
 
       <div className="relative mx-auto max-w-7xl px-6">
@@ -67,24 +72,16 @@ export function ArchitectureSection() {
           {/* Left: text */}
           <div>
             <p className="text-sm font-semibold uppercase tracking-widest text-violet-400 mb-3">
-              Architecture
+              {t.architecture.sectionLabel}
             </p>
             <h2 className="text-4xl font-bold tracking-tight text-zinc-50 mb-6">
-              Six layers, zero cloud
+              {t.architecture.title}
             </h2>
             <p className="text-lg text-zinc-400 leading-relaxed mb-8">
-              AssetVault uses a strict three-process architecture: the React UI
-              communicates exclusively via Tauri's typed IPC, Rust owns all disk
-              I/O and SQLite state, and the Python sidecar handles AI inference
-              over a local JSON-RPC channel.
+              {t.architecture.description}
             </p>
             <ul className="space-y-3 text-sm text-zinc-400">
-              {[
-                "Frontend has zero filesystem access — IPC only",
-                "Sidecar has no network socket — stdin/stdout only",
-                "SQLite is the only state store; FAISS is the only vector store",
-                "CLIP and FAISS run entirely in-process — no external API",
-              ].map((point) => (
+              {t.architecture.points.map((point) => (
                 <li key={point} className="flex items-start gap-3">
                   <span className="mt-0.5 h-5 w-5 flex shrink-0 items-center justify-center rounded-full bg-violet-500/10 ring-1 ring-violet-500/25">
                     <span className="h-1.5 w-1.5 rounded-full bg-violet-400" />
@@ -107,7 +104,7 @@ export function ArchitectureSection() {
                     >
                       {/* Gradient indicator */}
                       <div
-                        className={`h-8 w-8 shrink-0 rounded-lg bg-gradient-to-br ${step.color} flex items-center justify-center shadow-md ${step.glow}`}
+                        className={`h-8 w-8 shrink-0 rounded-lg bg-linear-to-br ${step.color} flex items-center justify-center shadow-md ${step.glow}`}
                       >
                         <span className="text-xs font-bold text-white/90">
                           {i + 1}

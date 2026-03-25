@@ -13,7 +13,9 @@ import { getDocBySlug } from "@/lib/docs";
 import { SITE_CONFIG } from "@/lib/seo";
 import { notFound } from "next/navigation";
 
-export const runtime = "edge";
+// Edge runtime can't use Node.js built-ins (fs, reading-time).
+// Switch to nodejs runtime so lib/docs.ts can read files from disk.
+export const runtime = "nodejs";
 export const alt = "AssetVault Documentation";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";

@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Search,
   Languages,
@@ -6,50 +8,15 @@ import {
   Lock,
   WifiOff,
 } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
-const features = [
-  {
-    icon: Search,
-    title: "Semantic Search",
-    description:
-      "Describe what you're looking for in plain English. CLIP understands meaning, not just keywords — find that 'dark dashboard with charts' without tags.",
-    accent: "violet",
-  },
-  {
-    icon: Languages,
-    title: "Multilingual",
-    description:
-      "Search in Japanese, Arabic, Spanish, or any of 100+ languages. CLIP's shared embedding space maps your query to the right visual results regardless of language.",
-    accent: "indigo",
-  },
-  {
-    icon: Images,
-    title: "Image Search",
-    description:
-      "Drag any reference image onto the search bar. AssetVault finds visually similar assets instantly. Combine with text to cross-modal search — 'like this but darker'.",
-    accent: "purple",
-  },
-  {
-    icon: Copy,
-    title: "Duplicate Detection",
-    description:
-      "Three-level detection: exact (SHA-256), perceptual (pHash hamming ≤&nbsp;10), and semantic (CLIP cosine similarity). Review and bulk-resolve with a single click.",
-    accent: "fuchsia",
-  },
-  {
-    icon: Lock,
-    title: "Total Privacy",
-    description:
-      "Every vector, thumbnail, and tag lives in a local SQLite database. Zero telemetry. Zero cloud API calls. The only outbound request is an optional version check.",
-    accent: "emerald",
-  },
-  {
-    icon: WifiOff,
-    title: "Offline-First",
-    description:
-      "After the one-time model download, AssetVault works with no internet connection. Your library is always accessible, on a plane or behind a corporate firewall.",
-    accent: "sky",
-  },
+const featureDefs = [
+  { key: "semantic" as const, icon: Search, accent: "violet" },
+  { key: "multilingual" as const, icon: Languages, accent: "indigo" },
+  { key: "image" as const, icon: Images, accent: "purple" },
+  { key: "duplicate" as const, icon: Copy, accent: "fuchsia" },
+  { key: "privacy" as const, icon: Lock, accent: "emerald" },
+  { key: "offline" as const, icon: WifiOff, accent: "sky" },
 ];
 
 const accentStyles: Record<string, { icon: string; ring: string; bg: string }> = {
@@ -86,31 +53,32 @@ const accentStyles: Record<string, { icon: string; ring: string; bg: string }> =
 };
 
 export function FeaturesSection() {
+  const { t } = useI18n();
   return (
     <section id="features" className="py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6">
         {/* Section header */}
         <div className="mx-auto max-w-2xl text-center mb-16">
           <p className="text-sm font-semibold uppercase tracking-widest text-violet-400 mb-3">
-            Capabilities
+            {t.features.sectionLabel}
           </p>
           <h2 className="text-4xl font-bold tracking-tight text-zinc-50">
-            Everything your design search should be
+            {t.features.sectionTitle}
           </h2>
           <p className="mt-4 text-lg text-zinc-400 leading-relaxed">
-            Six deeply integrated features powered by CLIP, FAISS, and EasyOCR —
-            all running locally in under 25&nbsp;ms.
+            {t.features.sectionDescription}
           </p>
         </div>
 
         {/* Feature grid */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((feature) => {
-            const styles = accentStyles[feature.accent] ?? accentStyles["violet"]!;
-            const Icon = feature.icon;
+          {featureDefs.map((fd) => {
+            const styles = accentStyles[fd.accent] ?? accentStyles["violet"]!;
+            const Icon = fd.icon;
+            const item = t.features.items[fd.key];
             return (
               <div
-                key={feature.title}
+                key={fd.key}
                 className="group relative rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6 hover:border-zinc-700 hover:bg-zinc-900 transition-all duration-200"
               >
                 {/* Hover glow */}
@@ -123,12 +91,11 @@ export function FeaturesSection() {
                 </div>
 
                 <h3 className="text-base font-semibold text-zinc-100 mb-2">
-                  {feature.title}
+                  {item.title}
                 </h3>
-                <p
-                  className="text-sm text-zinc-400 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: feature.description }}
-                />
+                <p className="text-sm text-zinc-400 leading-relaxed">
+                  {item.description}
+                </p>
               </div>
             );
           })}

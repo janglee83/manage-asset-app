@@ -51,36 +51,36 @@ export interface DownloadAsset {
 }
 
 export const DOWNLOAD_CONFIG = {
-  version: "0.9.0",
+  version: "0.1.0",
   releaseDate: "2026-03-25",
   downloads: {
     "macos-arm64": {
       label: "macOS Apple Silicon",
-      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.9.0/AssetVault_0.9.0_aarch64.dmg",
+      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.1.0/AssetVault_0.1.0_aarch64.dmg",
       size: "42 MB",
       format: ".dmg",
     },
     "macos-x64": {
       label: "macOS Intel",
-      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.9.0/AssetVault_0.9.0_x64.dmg",
+      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.1.0/AssetVault_0.1.0_x64.dmg",
       size: "44 MB",
       format: ".dmg",
     },
     "windows-x64": {
       label: "Windows x64",
-      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.9.0/AssetVault_0.9.0_x64.msi",
+      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.1.0/AssetVault_0.1.0_x64-setup.exe",
       size: "38 MB",
-      format: ".msi",
+      format: ".exe",
     },
     "linux-appimage": {
       label: "Linux AppImage",
-      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.9.0/AssetVault_0.9.0_amd64.AppImage",
+      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.1.0/AssetVault_0.1.0_amd64.AppImage",
       size: "55 MB",
       format: ".AppImage",
     },
     "linux-deb": {
       label: "Linux .deb",
-      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.9.0/AssetVault_0.9.0_amd64.deb",
+      url: "https://github.com/janglee83/manage-asset-app/releases/download/v0.1.0/asset-vault_0.1.0_amd64.deb",
       size: "48 MB",
       format: ".deb",
     },
@@ -313,7 +313,7 @@ export function buildHomeMetadata(): Metadata {
       absolute: SITE_CONFIG.title,
     },
     description: SITE_CONFIG.description,
-    keywords: SITE_CONFIG.keywords,
+    keywords: [...SITE_CONFIG.keywords],
     authors: [{ name: "AssetVault", url: SITE_CONFIG.siteUrl }],
     creator: "AssetVault",
     publisher: "AssetVault",

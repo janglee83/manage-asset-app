@@ -7,6 +7,7 @@ import {
   buildSoftwareApplicationJsonLd,
   buildWebSiteJsonLd,
 } from "@/lib/seo";
+import { LanguageProvider } from "@/lib/i18n";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_CONFIG.siteUrl),
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
     template: SITE_CONFIG.titleTemplate,
   },
   description: SITE_CONFIG.description,
-  keywords: SITE_CONFIG.keywords,
+  keywords: [...SITE_CONFIG.keywords],
   authors: [{ name: SITE_CONFIG.siteName, url: SITE_CONFIG.siteUrl }],
   creator: SITE_CONFIG.siteName,
   publisher: SITE_CONFIG.siteName,
@@ -82,7 +83,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-zinc-950 text-zinc-50 antialiased">
-        {children}
+        <LanguageProvider>{children}</LanguageProvider>
       </body>
     </html>
   );

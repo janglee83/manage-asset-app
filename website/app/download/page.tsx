@@ -6,7 +6,8 @@
  */
 
 import type { Metadata } from "next";
-import { SITE_CONFIG, DOWNLOAD_CONFIG } from "@/lib/seo";
+import { SITE_CONFIG } from "@/lib/seo";
+import { fetchLatestRelease } from "@/lib/releases";
 import { DownloadSection } from "@/components/landing/DownloadSection";
 import { NavBar } from "@/components/landing/NavBar";
 import { Footer } from "@/components/landing/Footer";
@@ -35,7 +36,9 @@ export const metadata: Metadata = {
   },
 };
 
-export default function DownloadPage() {
+export default async function DownloadPage() {
+  const release = await fetchLatestRelease();
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50">
       <NavBar />
@@ -50,15 +53,14 @@ export default function DownloadPage() {
             Downloads
           </p>
           <h1 className="text-4xl font-bold tracking-tight text-zinc-50 mb-3">
-            AssetVault v{DOWNLOAD_CONFIG.version}
+            AssetVault v{release.version}
           </h1>
           <p className="text-zinc-400 text-lg max-w-md mx-auto">
-            Released {DOWNLOAD_CONFIG.releaseDate} · Free for up to 5 000
-            assets
+            Released {release.releaseDate} · Free for up to 5 000 assets
           </p>
         </div>
 
-        <DownloadSection />
+        <DownloadSection releaseData={release} />
 
         {/* Version table */}
         <section className="border-t border-zinc-800/50 py-16">
@@ -83,7 +85,7 @@ export default function DownloadPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(DOWNLOAD_CONFIG.downloads).map(
+                  {Object.entries(release.downloads).map(
                     ([key, asset]) => (
                       <tr
                         key={key}

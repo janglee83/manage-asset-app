@@ -1,9 +1,13 @@
+"use client";
+
 import Link from "next/link";
 import { Github, Twitter } from "lucide-react";
 import { DOCS_NAV } from "@/lib/nav";
 import { SITE_CONFIG } from "@/lib/seo";
+import { useI18n, interpolate } from "@/lib/i18n";
 
 export function Footer() {
+  const { t } = useI18n();
   const currentYear = new Date().getFullYear();
 
   return (
@@ -13,7 +17,7 @@ export function Footer() {
           {/* Brand */}
           <div className="lg:col-span-1">
             <div className="flex items-center gap-2.5 mb-4">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br from-violet-600 to-indigo-600">
                 <div className="h-3 w-3 rounded-sm border-[1.5px] border-white/90 flex items-center justify-center">
                   <div className="h-1 w-1 rounded-full bg-white/90" />
                 </div>
@@ -23,8 +27,7 @@ export function Footer() {
               </span>
             </div>
             <p className="text-xs text-zinc-500 leading-relaxed mb-5">
-              Local-first AI search for your design library. Open source.
-              Privacy-first.
+              {t.footer.tagline}
             </p>
             <div className="flex items-center gap-3">
               <a
@@ -72,15 +75,15 @@ export function Footer() {
           {/* Product links */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-4">
-              Product
+              {t.footer.product}
             </p>
             <ul className="space-y-2.5">
               {[
-                { label: "Download", href: "/#download" },
-                { label: "Changelog", href: "https://github.com/janglee83/manage-asset-app/releases", external: true },
-                { label: "Issues", href: "https://github.com/janglee83/manage-asset-app/issues", external: true },
-                { label: "Documentation", href: "/docs" },
-                { label: "Security", href: "/docs/security" },
+                { label: t.footer.links.download, href: "/#download" },
+                { label: t.footer.links.changelog, href: "https://github.com/janglee83/manage-asset-app/releases", external: true },
+                { label: t.footer.links.issues, href: "https://github.com/janglee83/manage-asset-app/issues", external: true },
+                { label: t.footer.links.documentation, href: "/docs" },
+                { label: t.footer.links.security, href: "/docs/security" },
               ].map((link) => (
                 <li key={link.label}>
                   {link.external ? (
@@ -108,10 +111,8 @@ export function Footer() {
 
         {/* Bottom bar */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-zinc-800/60 pt-8 text-xs text-zinc-600">
-          <span>© {currentYear} AssetVault. MIT License.</span>
-          <span>
-            Built with Next.js, Tailwind CSS, Tauri, Rust, and Python.
-          </span>
+          <span>{interpolate(t.footer.copyright, { year: String(currentYear) })}</span>
+          <span>{t.footer.builtWith}</span>
         </div>
       </div>
     </footer>

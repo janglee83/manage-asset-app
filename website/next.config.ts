@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
+  // Set the root to the website directory to avoid lockfile confusion with the
+  // parent Tauri project (which also has a package-lock.json).
+  outputFileTracingRoot: path.join(__dirname),
+
+  // reading-time uses Node.js built-ins (stream) — keep it server-side only.
+  serverExternalPackages: ["reading-time"],
   // All doc pages are statically generated at build time.
   // output: "export" would work for pure static, but we keep "standalone"
   // so Vercel can serve it with edge functions for future dynamic features.
