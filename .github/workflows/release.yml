@@ -30,6 +30,9 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   # ───────────────────────────────────────────────────────────────────────────
   # Step 1: Create the draft GitHub release (fast — no build required)
