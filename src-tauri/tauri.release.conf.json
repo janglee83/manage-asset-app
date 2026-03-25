@@ -7,7 +7,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdERDdEQTY5QTEwMEIyM0YKUldRL3NnQ2hhZHJYZlR1M3JNVWtGdlpCcGJXMXFKZ2N1Yy95MGFFVkQ4S1pJNzZ5cTBXN0poLzUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFRjNBQzUzMDg0NjE0NDMKUldSREZFWUlVNnp6L21Eek9aek1aS1JzY1ZvUjVPSnVBa29iVjhIdy9lc3JncmcrMk1MNEFuUHYK",
       "endpoints": [
         "https://github.com/janglee83/manage-asset-app/releases/latest/download/latest.json"
       ],
