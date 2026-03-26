@@ -17,6 +17,16 @@
 # Optional secrets for Windows code-signing
 #   WINDOWS_CERTIFICATE                — base64-encoded .pfx certificate
 #   WINDOWS_CERTIFICATE_PASSWORD       — .pfx password
+#
+# Optional secrets for macOS code-signing + notarization
+#   (Without these the app will show "damaged" on macOS Gatekeeper)
+#   APPLE_CERTIFICATE          — base64-encoded .p12 Developer ID Application cert
+#                                 openssl base64 -in cert.p12 | tr -d '\n'
+#   APPLE_CERTIFICATE_PASSWORD — password used when exporting the .p12
+#   APPLE_SIGNING_IDENTITY     — e.g. "Developer ID Application: Your Name (TEAMID)"
+#   APPLE_ID                   — your Apple ID email (for notarytool)
+#   APPLE_PASSWORD             — app-specific password (appleid.apple.com → Security)
+#   APPLE_TEAM_ID              — 10-char team ID from developer.apple.com
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Release
@@ -198,12 +208,40 @@ jobs:
       - name: Build Python sidecar
         run: bash ./scripts/build-sidecar.sh
 
+      - name: Import Apple Developer certificate
+        if: env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
       - name: Build aarch64 (Apple Silicon) and upload
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: --target aarch64-apple-darwin --config src-tauri/tauri.release.conf.json
@@ -214,9 +252,22 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           args: --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
+
+      - name: Remove signing keychain
+        if: always() && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
 
   # ───────────────────────────────────────────────────────────────────────────
   # Step 3: Publish the draft release once all platform builds succeed
