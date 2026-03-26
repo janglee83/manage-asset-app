@@ -5,7 +5,7 @@
 #
 # What this does:
 #   1. Creates a draft GitHub release.
-#   2. In parallel, builds for Windows x64, macOS Universal, and Linux x64.
+#   2. In parallel, builds for Windows x64 and macOS Universal.
 #   3. Each build: compiles Python sidecar (PyInstaller --onedir),
 #      then runs `tauri build` and uploads artifacts to the draft release.
 #
@@ -73,8 +73,6 @@ jobs:
             | macOS Apple Silicon (M1+) | `AssetVault_*_aarch64.dmg` |
             | macOS Intel x64 | `AssetVault_*_x64.dmg` |
             | Windows x64 | `AssetVault_*_x64-setup.exe` |
-            | Linux AppImage | `AssetVault_*_amd64.AppImage` |
-            | Linux .deb | `asset-vault_*_amd64.deb` |
           draft: true
           prerelease: false
 
@@ -221,82 +219,11 @@ jobs:
           args: --target x86_64-apple-darwin --config src-tauri/tauri.release.conf.json
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Step 2c: Linux x64 (AppImage + .deb)
-  # ───────────────────────────────────────────────────────────────────────────
-  release-linux:
-    name: Build Linux x64
-    needs: create-release
-    runs-on: ubuntu-22.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libssl-dev \
-            libgtk-3-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Set up Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
-
-      - name: Cache Rust build artefacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "src-tauri -> target"
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('python-service/requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Build Python sidecar
-        run: bash ./scripts/build-sidecar.sh
-
-      - name: Build and upload to release
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          args: --target x86_64-unknown-linux-gnu --config src-tauri/tauri.release.conf.json
-
-  # ───────────────────────────────────────────────────────────────────────────
   # Step 3: Publish the draft release once all platform builds succeed
   # ───────────────────────────────────────────────────────────────────────────
   publish-release:
     name: Publish release
-    needs: [create-release, release-windows, release-macos, release-linux]
+    needs: [create-release, release-windows, release-macos]
     runs-on: ubuntu-latest
 
     steps:
